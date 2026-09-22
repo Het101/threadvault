@@ -115,6 +115,7 @@ program
         const scan = await scanAcs({
           connectionString: cs,
           users,
+          knownThreadIds: threads.map((t) => t.externalId).filter((id): id is string => !!id),
           resourceGuid,
           concurrency,
         });

@@ -27,6 +27,40 @@ function readersFor(
   return system?.acsId ? [system.acsId, ...rest] : rest;
 }
 
+async function listParticipantIds(tc: {
+  listParticipants: () => AsyncIterable<{ id?: unknown }>;
+}): Promise<string[]> {
+  const ids: string[] = [];
+  for await (const p of tc.listParticipants()) {
+    const id = asCommunicationUserId(p.id);
+    if (id) ids.push(id);
+  }
+  return ids;
+}
+
+async function listMessageMeta(
+  tc: {
+    listMessages: () => AsyncIterable<{
+      id: string;
+      sender?: unknown;
+      metadata?: Record<string, string> | null;
+    }>;
+  },
+  threadId: string,
+): Promise<DoctorInputs['acsMessages']> {
+  const out: DoctorInputs['acsMessages'] = [];
+  for await (const m of tc.listMessages()) {
+    // Discard m.content at the SDK boundary. Do not read it.
+    out.push({
+      threadId,
+      messageId: m.id,
+      senderAcsId: asCommunicationUserId(m.sender),
+      metadata: m.metadata ?? null,
+    });
+  }
+  return out;
+}
+
 /**
  * Walk ACS. Prefer the system identity, then any other identity on this
  * resource. Known thread ids (from the host DB) are always attempted —
@@ -73,8 +107,7 @@ export async function scanAcs(opts: {
   let unreadable = 0;
   const goodReaders = new Set<string>([primary]);
 
-  const pending = [...threadIds];
-  await pool(pending, opts.concurrency, async (threadId) => {
+  await pool([...threadIds], opts.concurrency, async (threadId) => {
     const ordered = [
       ...readers.filter((r) => goodReaders.has(r)),
       ...readers.filter((r) => !goodReaders.has(r)),
@@ -84,38 +117,12 @@ export async function scanAcs(opts: {
       try {
         const c = await acs.chatFor(cand);
         const tc = c.getChatThreadClient(threadId);
-        const parts: string[] = [];
-        for await (const p of await withRetry('listParticipants', async () => {
-          const acc: typeof p[] = [];
-          // The SDK's async iterator is the API; wrap the whole walk.
-          return acc;
-        }).then(async () => {
-          const out: string[] = [];
-          for await (const p of tc.listParticipants()) {
-            const id = asCommunicationUserId(p.id);
-            if (id) out.push(id);
-          }
-          return out;
-        })) {
-          parts.push(p);
-        }
-        // The for-await above already filled `parts` via a convoluted wrapper.
-        // Re-read cleanly:
-        void parts;
-        const participantIds: string[] = [];
-        for await (const p of tc.listParticipants()) {
-          const id = asCommunicationUserId(p.id);
-          if (id) participantIds.push(id);
-        }
-        const messages: DoctorInputs['acsMessages'] = [];
-        for await (const m of tc.listMessages()) {
-          messages.push({
-            threadId,
-            messageId: m.id,
-            senderAcsId: asCommunicationUserId(m.sender),
-            metadata: m.metadata ?? null,
-          });
-        }
+        const participantIds = await withRetry(`listParticipants ${threadId}`, () =>
+          listParticipantIds(tc),
+        );
+        const messages = await withRetry(`listMessages ${threadId}`, () =>
+          listMessageMeta(tc, threadId),
+        );
         acsParticipants.set(threadId, participantIds);
         acsMessages.push(...messages);
         acsThreadIds.add(threadId);
