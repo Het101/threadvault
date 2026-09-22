@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.jsonl
+acs-dump*/
+.threadvault/
+*.log
+.DS_Store
+Thumbs.db

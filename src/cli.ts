@@ -1,0 +1,175 @@
+import 'dotenv/config';
+import { Command } from 'commander';
+import { acsConnectionString, acsExpectResource, loadConfig } from './config.ts';
+import { probeResource } from './acs/client.ts';
+import { isKnownGuid } from './acs/identity.ts';
+import { connectReadOnly } from './db/pg.ts';
+import {
+  loadHostThreads,
+  loadHostUsers,
+  loadMirrorThreads,
+  loadMirrorUsers,
+  runChecks,
+  type DoctorInputs,
+} from './doctor/checks.ts';
+import { buildReport, exitCode, formatReport } from './doctor/report.ts';
+import { scanAcs } from './doctor/scan.ts';
+import { log, logError } from './log.ts';
+
+const program = new Command();
+
+program
+  .name('threadvault')
+  .description('Mirror Azure Communication Services chat into Postgres so the ACS resource is disposable.')
+  .version('0.1.0');
+
+program
+  .command('probe')
+  .description('Mint a throwaway identity to learn the resource GUID. Prints host + GUID, never the key.')
+  .action(async () => {
+    const cs = acsConnectionString();
+    if (!cs) {
+      logError('ACS_CONNECTION_STRING (or ACS_NEW_CONNECTION_STRING) is not set');
+      process.exit(2);
+    }
+    const r = await probeResource(cs);
+    log(`${(r.host || '-').padEnd(68)}  ${(r.guid || '-').padEnd(38)}  ${r.error ? r.error : 'ok'}`);
+    const expect = acsExpectResource();
+    if (!expect) {
+      log(`note: ACS_EXPECT_RESOURCE unset. Target resource GUID is ${r.guid ?? '?'}`);
+      if (r.guid) log(`      export ACS_EXPECT_RESOURCE=${r.guid}`);
+    } else if (r.guid && r.guid === expect) {
+      log('ok: connection string matches ACS_EXPECT_RESOURCE');
+    } else if (isKnownGuid(r.guid)) {
+      logError(`WARNING: connection string is ${r.guid}, expected ${expect}`);
+      process.exit(1);
+    } else {
+      logError('INCONCLUSIVE: could not read the resource GUID — fix the error above before trusting any of this');
+      process.exit(2);
+    }
+  });
+
+program
+  .command('doctor')
+  .description('Read-only audit. Finds stale identities, system-only threads, misattributed messages, missing system identity, split-brain threads.')
+  .option('--json', 'print the report as JSON')
+  .option('--config <path>', 'path to threadvault.yml')
+  .option('--no-acs', 'skip the ACS walk (database checks only)')
+  .option('--concurrency <n>', 'ACS listing concurrency', '4')
+  .action(async (opts: { json?: boolean; config?: string; acs?: boolean; concurrency?: string }) => {
+    const wantJson = !!opts.json;
+    const walkAcs = opts.acs !== false;
+    const concurrency = Math.max(1, Number(opts.concurrency ?? 4));
+    try {
+      const cfg = loadConfig(opts.config);
+      const cs = acsConnectionString();
+      const dbUrl = process.env.DATABASE_URL;
+
+      let resourceGuid = acsExpectResource();
+      let host = '(unknown)';
+      if (walkAcs) {
+        if (!cs) {
+          logError('ACS_CONNECTION_STRING is not set (pass --no-acs to audit the database only)');
+          process.exit(2);
+        }
+        const probe = await probeResource(cs);
+        host = probe.host;
+        if (!isKnownGuid(probe.guid)) {
+          logError(`could not probe ACS: ${probe.error ?? 'unknown error'}`);
+          process.exit(2);
+        }
+        if (resourceGuid && probe.guid !== resourceGuid) {
+          logError(`ACS_EXPECT_RESOURCE is ${resourceGuid}, connection string is ${probe.guid}`);
+          process.exit(2);
+        }
+        resourceGuid = probe.guid!;
+      } else if (!resourceGuid) {
+        logError('ACS_EXPECT_RESOURCE is required with --no-acs (the GUID to compare stored identities against)');
+        process.exit(2);
+      }
+
+      let users: DoctorInputs['users'] = [];
+      let threads: DoctorInputs['threads'] = [];
+      if (dbUrl) {
+        const db = await connectReadOnly(dbUrl);
+        try {
+          if (cfg.host) {
+            users = await loadHostUsers(db, cfg.host);
+            threads = await loadHostThreads(db, cfg.host);
+          } else {
+            users = await loadMirrorUsers(db, resourceGuid);
+            threads = await loadMirrorThreads(db);
+          }
+        } finally {
+          await db.end().catch(() => undefined);
+        }
+      } else if (!wantJson) {
+        log('note: DATABASE_URL unset — doctor will only see what ACS lists, not host identities');
+      }
+
+      let acsParticipants: DoctorInputs['acsParticipants'] = new Map();
+      let acsMessages: DoctorInputs['acsMessages'] = [];
+      let acsThreadIds = new Set<string>();
+      let acsScanned = false;
+      if (walkAcs && cs) {
+        const scan = await scanAcs({
+          connectionString: cs,
+          users,
+          resourceGuid,
+          concurrency,
+        });
+        acsParticipants = scan.acsParticipants;
+        acsMessages = scan.acsMessages;
+        acsThreadIds = scan.acsThreadIds;
+        acsScanned = true;
+        if (!wantJson && scan.unreadable) {
+          log(`  ${scan.unreadable} thread(s) unreadable with the chosen identity`);
+        }
+      }
+
+      const findings = runChecks({
+        resourceGuid,
+        users,
+        threads,
+        acsParticipants,
+        acsMessages,
+        acsThreadIds,
+        acsScanned,
+      });
+      const report = buildReport(resourceGuid, host, findings);
+      if (wantJson) {
+        console.log(JSON.stringify(report, null, 2));
+      } else {
+        log(formatReport(report));
+      }
+      process.exit(exitCode(report, false));
+    } catch (e) {
+      logError(e instanceof Error ? e.message : String(e));
+      process.exit(2);
+    }
+  });
+
+const mirror = program.command('mirror').description('ACS → Postgres. Makes the ACS resource disposable.');
+mirror
+  .command('backfill')
+  .description('Walk ACS (or a JSONL extract) and upsert into threadvault_* tables. Not implemented yet.')
+  .action(() => {
+    logError('mirror backfill is not implemented in 0.1.0 — doctor ships first.');
+    process.exit(2);
+  });
+
+const migrate = program.command('migrate').description('Replay an estate into a new ACS resource.');
+for (const name of ['extract', 'plan', 'rehearse', 'apply'] as const) {
+  migrate
+    .command(name)
+    .description(`${name} — not implemented yet. doctor ships first.`)
+    .action(() => {
+      logError(`migrate ${name} is not implemented in 0.1.0 — doctor ships first.`);
+      process.exit(2);
+    });
+}
+
+program.parseAsync(process.argv).catch((e) => {
+  logError(e instanceof Error ? e.message : String(e));
+  process.exit(2);
+});

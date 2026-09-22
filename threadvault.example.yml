@@ -1,0 +1,17 @@
+# Optional. Copy to threadvault.yml next to where you run the CLI, or pass --config.
+#
+# When `host` is set, doctor reads the existing app's tables so it is useful
+# before you have run `mirror backfill`. Quoted identifiers; values are column
+# / table names, never SQL.
+
+host:
+  usersTable: UserDetails
+  usersIdColumn: user_id
+  usersAcsIdColumn: acsUserId
+  usersSystemColumn: isSystemUser
+  threadsTable: ChatThread
+  threadsIdColumn: id
+  threadsExternalIdColumn: externalId
+  participantsTable: ChatParticipant
+  participantsThreadColumn: threadId
+  participantsUserColumn: userId
