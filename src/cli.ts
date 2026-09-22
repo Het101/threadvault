@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import { acsConnectionString, acsExpectResource, loadConfig } from './config.ts';
 import { probeResource } from './acs/client.ts';
 import { isKnownGuid } from './acs/identity.ts';
-import { connectReadOnly } from './db/pg.ts';
+import { connectReadOnly, connect } from './db/pg.ts';
 import {
   loadHostThreads,
   loadHostUsers,
@@ -14,6 +14,10 @@ import {
 } from './doctor/checks.ts';
 import { buildReport, exitCode, formatReport } from './doctor/report.ts';
 import { scanAcs } from './doctor/scan.ts';
+import { mirrorBackfill } from './mirror/backfill.ts';
+import { migrateRehearse } from './migrate/rehearse.ts';
+import { migrateApply } from './migrate/apply.ts';
+import { applySchema } from './db/migrate.ts';
 import { log, logError } from './log.ts';
 
 const program = new Command();
@@ -153,14 +157,98 @@ program
 const mirror = program.command('mirror').description('ACS → Postgres. Makes the ACS resource disposable.');
 mirror
   .command('backfill')
-  .description('Walk ACS (or a JSONL extract) and upsert into threadvault_* tables. Not implemented yet.')
-  .action(() => {
-    logError('mirror backfill is not implemented in 0.1.0 — doctor ships first.');
-    process.exit(2);
+  .description('Walk ACS (or a JSONL extract) and upsert into threadvault_* tables.')
+  .option('--from-jsonl <path>', 'read from a JSONL file instead of ACS')
+  .option('--to-jsonl <path>', 'write to a JSONL file instead of Postgres')
+  .option('--reader-acs-id <id>', 'the ACS identity to perform the ACS read as')
+  .option('--commit', 'must be passed to write to Postgres (otherwise dry-run)')
+  .action(async (opts: { fromJsonl?: string; toJsonl?: string; readerAcsId?: string; commit?: boolean }) => {
+    try {
+      const cs = acsConnectionString();
+      const dbUrl = process.env.DATABASE_URL;
+
+      let db;
+      if (!opts.toJsonl) {
+        if (!dbUrl) {
+          logError('DATABASE_URL is not set and --to-jsonl is omitted.');
+          process.exit(2);
+        }
+        if (!opts.commit) {
+          log('Dry run: establishing read-only connection. Pass --commit to write.');
+          db = await connectReadOnly(dbUrl);
+        } else {
+          db = await connect(dbUrl, false);
+          await applySchema(db); // ensure tables exist before upserting
+        }
+      }
+
+      log('Starting backfill...');
+      const stats = await mirrorBackfill({
+        connectionString: cs,
+        readerAcsId: opts.readerAcsId,
+        db,
+        jsonlPath: opts.toJsonl,
+        fromJsonl: opts.fromJsonl,
+      });
+
+      if (stats) {
+        log(`Backfill complete. Threads: ${stats.threads}, Participants: ${stats.participants}, Messages: ${stats.messages}`);
+      } else {
+        log('Backfill complete.');
+      }
+
+      if (db) {
+        await db.end().catch(() => undefined);
+      }
+    } catch (e) {
+      logError(e instanceof Error ? e.message : String(e));
+      process.exit(2);
+    }
   });
 
 const migrate = program.command('migrate').description('Replay an estate into a new ACS resource.');
-for (const name of ['extract', 'plan', 'rehearse', 'apply'] as const) {
+
+migrate
+  .command('rehearse')
+  .description('Write a synthetic thread to the target ACS resource and assert the four durability goals, then delete it.')
+  .option('--system-acs-id <id>', 'system ACS identity')
+  .option('--non-system-acs-id <id>', 'non-system ACS identity')
+  .option('--non-system-our-user-id <id>', 'non-system OUR UUID')
+  .option('--keep', 'do not delete the rehearsed thread')
+  .action(async (opts: { systemAcsId?: string; nonSystemAcsId?: string; nonSystemOurUserId?: string; keep?: boolean }) => {
+    try {
+      const cs = acsConnectionString();
+      if (!cs) {
+        logError('ACS_CONNECTION_STRING is not set');
+        process.exit(2);
+      }
+      if (!opts.systemAcsId || !opts.nonSystemAcsId || !opts.nonSystemOurUserId) {
+        logError('Missing required options for rehearse: --system-acs-id, --non-system-acs-id, --non-system-our-user-id');
+        process.exit(2);
+      }
+      log('Starting rehearse...');
+      await migrateRehearse({
+        connectionString: cs,
+        systemAcsId: opts.systemAcsId!,
+        nonSystemAcsId: opts.nonSystemAcsId!,
+        nonSystemOurUserId: opts.nonSystemOurUserId!,
+        keep: opts.keep,
+      });
+    } catch (e) {
+      logError(e instanceof Error ? e.message : String(e));
+      process.exit(2);
+    }
+  });
+
+migrate
+  .command('apply')
+  .description('Replay threads, participants, and messages onto the target ACS resource.')
+  .action(async () => {
+    logError('migrate apply is not fully implemented yet in 0.1.0 (stubbed).');
+    process.exit(2);
+  });
+
+for (const name of ['extract', 'plan'] as const) {
   migrate
     .command(name)
     .description(`${name} — not implemented yet. doctor ships first.`)

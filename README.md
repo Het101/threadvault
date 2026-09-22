@@ -7,11 +7,11 @@ ACS identities are resource-scoped (`8:acs:<resourceGuid>_<userGuid>`). ACS has 
 ```
 npx threadvault doctor              # read-only audit — start here
 npx threadvault probe               # which resource does this connection string hit?
-npx threadvault mirror backfill     # ACS → Postgres (coming)
-npx threadvault migrate …           # replay into a new resource (coming)
+npx threadvault mirror backfill     # ACS → Postgres
+npx threadvault migrate rehearse    # synthetic thread assertion test
 ```
 
-Status: **0.1.0 — `doctor` and `probe` ship.** `mirror` and `migrate` are stubbed so the CLI surface is stable.
+Status: **0.1.0 — `doctor`, `probe`, `mirror backfill`, and `migrate rehearse` ship.**
 
 ## Why this exists
 
@@ -89,7 +89,26 @@ If both sides of a comparison fail they both read `-`, which compares equal. Pro
 
 Chat message bodies are protected health information in any healthcare deployment. Threadvault never logs `content` / `text` / `html` / `body`. Do not put message bodies in issues, fixtures, or commit messages.
 
-## Writes (when `mirror` / `migrate` land)
+## `mirror backfill`
+
+Takes an Azure Communication Services thread resource and mirrors the threads, messages, and participants into a local Postgres database. Uses SQL `ON CONFLICT DO UPDATE` so you can resume mid-run and keep up with a live stream.
+
+```bash
+export DATABASE_URL='postgres://...'
+npx threadvault mirror backfill --commit
+```
+
+*Note: You can `--to-jsonl` and `--from-jsonl` to snapshot the dataset outside the DB.*
+
+## `migrate rehearse`
+
+Rehearses the migration assertions by simulating a thread interaction with synthetic operations, validating 4 specific attributes for durability (timestamps, original senders, replying capabilities, and participant parity):
+
+```bash
+npx threadvault migrate rehearse --system-acs-id 8:acs:... --non-system-acs-id 8:acs:... --non-system-our-user-id u-123
+```
+
+## Writes
 
 - Dry-run unless `--commit`.
 - `ACS_EXPECT_RESOURCE` is **required** for any ACS write. The command refuses if the target GUID does not match.
