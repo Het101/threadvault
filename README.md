@@ -26,7 +26,7 @@ Both were repairable only because the extract had written `metadata.originalSend
 
 ## Install
 
-Node **20+**. Node 18 is unsupported — `globalThis.crypto.randomUUID` is missing and the Azure SDK throws.
+Node **22+**. Node 18 is unsupported (`globalThis.crypto.randomUUID` is missing). Node 20 is unsupported because the current Azure SDK requires it.
 
 ```bash
 npm install -g threadvault

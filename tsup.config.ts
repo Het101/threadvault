@@ -8,7 +8,7 @@ export default defineConfig({
   splitting: false,
   sourcemap: true,
   banner: { js: '#!/usr/bin/env node' },
-  target: 'node20',
+  target: 'node22',
   // Native-optional (pg) and the Azure SDK stay in node_modules.
   external: [/^@azure\//, 'pg', 'commander', 'dotenv', 'yaml'],
 });

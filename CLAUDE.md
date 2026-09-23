@@ -11,7 +11,7 @@ Standalone CLI. Makes an Azure Communication Services chat resource disposable b
 
 ## Runtime
 
-- Node `>=20`. Node 18 is unsupported (`globalThis.crypto.randomUUID` is missing, and the Azure SDK throws).
+- Node `>=22`. Node 18 is unsupported (`globalThis.crypto.randomUUID` is missing). Node 20 is unsupported because current Azure SDK packages require `>=22`.
 - TypeScript ESM. `tsx src/cli.ts` for dev, `tsup` for the published bin.
 - Tests: `vitest`. Fixtures are synthetic — lorem, never clinical text, never real names.
 
