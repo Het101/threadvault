@@ -17,6 +17,7 @@ import { scanAcs } from './doctor/scan.ts';
 import { mirrorBackfill } from './mirror/backfill.ts';
 import { migrateRehearse } from './migrate/rehearse.ts';
 import { migrateApply } from './migrate/apply.ts';
+import { sourceJsonlFile } from './mirror/source-jsonl.ts';
 import { applySchema } from './db/migrate.ts';
 import { log, logError } from './log.ts';
 
@@ -243,9 +244,42 @@ migrate
 migrate
   .command('apply')
   .description('Replay threads, participants, and messages onto the target ACS resource.')
-  .action(async () => {
-    logError('migrate apply is not fully implemented yet in 0.1.0 (stubbed).');
-    process.exit(2);
+  .option('--from-jsonl <path>', 'path to JSONL extract')
+  .option('--from-mirror', 'read from Postgres mirror')
+  .action(async (opts: { fromJsonl?: string; fromMirror?: boolean }) => {
+    try {
+      const targetResourceGuid = acsExpectResource();
+      if (!targetResourceGuid) {
+        logError('ACS_EXPECT_RESOURCE is required. The command refuses to write without it.');
+        process.exit(2);
+      }
+
+      const cs = acsConnectionString();
+      if (!cs) {
+        logError('ACS_CONNECTION_STRING is not set');
+        process.exit(2);
+      }
+
+      let sourceStream;
+      if (opts.fromJsonl) {
+        sourceStream = sourceJsonlFile(opts.fromJsonl);
+      } else if (opts.fromMirror) {
+        logError('--from-mirror stream is not implemented yet.');
+        process.exit(2);
+      } else {
+        logError('Must specify --from-jsonl or --from-mirror');
+        process.exit(2);
+      }
+
+      await migrateApply({
+        connectionString: cs,
+        sourceStream,
+        targetResourceGuid,
+      });
+    } catch (e) {
+      logError(e instanceof Error ? e.message : String(e));
+      process.exit(2);
+    }
   });
 
 for (const name of ['extract', 'plan'] as const) {
