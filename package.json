@@ -1,6 +1,6 @@
 {
   "name": "threadvault",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Mirror Azure Communication Services chat into Postgres so the ACS resource is disposable.",
   "type": "module",
   "main": "dist/cli.js",
@@ -10,7 +10,8 @@
   "files": [
     "dist",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=22"
@@ -22,7 +23,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "hooks": "git config core.hooksPath .githooks",
-    "prepare": "git config core.hooksPath .githooks || exit 0"
+    "prepare": "node -e \"const f=require('fs');if(f.existsSync('.githooks')){try{require('child_process').execSync('git config core.hooksPath .githooks')}catch(e){}}\"",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "repository": {
     "type": "git",
@@ -55,5 +57,9 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^4.1.11"
-  }
+  },
+  "bugs": {
+    "url": "https://github.com/Het101/threadvault/issues"
+  },
+  "homepage": "https://github.com/Het101/threadvault#readme"
 }
