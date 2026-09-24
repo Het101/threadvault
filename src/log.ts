@@ -12,9 +12,11 @@ const PHI_KEYS = new Set([
 ]);
 
 const SECRET = /accesskey=[^;\s]+/gi;
+/** `postgres://user:password@host` - pg surfaces these in connection errors. */
+const URL_CREDENTIALS = /([a-z][a-z0-9+.-]*:\/\/[^\s:/?#@]+:)[^\s@/]+@/gi;
 
 export function redactSecrets(text: string): string {
-  return text.replace(SECRET, 'accesskey=[redacted]');
+  return text.replace(SECRET, 'accesskey=[redacted]').replace(URL_CREDENTIALS, '$1[redacted]@');
 }
 
 export function redactPhi(value: unknown): unknown {
@@ -39,4 +41,13 @@ export function log(message: string, extra?: Record<string, unknown>): void {
 export function logError(message: string, extra?: Record<string, unknown>): void {
   if (extra) console.error(redactSecrets(message), redactPhi(extra));
   else console.error(redactSecrets(message));
+}
+
+/**
+ * The only way to put structured output on stdout. `--json` used to hand
+ * JSON.stringify straight to console.log, which walked around every redaction
+ * rule in this file. Route it through the same strippers as everything else.
+ */
+export function logJson(value: unknown): void {
+  console.log(redactSecrets(JSON.stringify(redactPhi(value), null, 2)));
 }

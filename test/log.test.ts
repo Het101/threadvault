@@ -34,3 +34,12 @@ describe('log', () => {
     spy.mockRestore();
   });
 });
+
+describe('redactSecrets on connection URLs', () => {
+  it('strips the password out of a Postgres URL', async () => {
+    const { redactSecrets } = await import('../src/log.ts');
+    expect(redactSecrets('postgres://admin:hunter2@db.postgres.database.azure.com:5432/app')).toBe(
+      'postgres://admin:[redacted]@db.postgres.database.azure.com:5432/app',
+    );
+  });
+});
