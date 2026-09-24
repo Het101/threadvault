@@ -4,13 +4,15 @@
   <img src="https://raw.githubusercontent.com/Het101/threadvault/main/docs/assets/hero.png" alt="Threadvault — protect your ACS chat history. Mirror, migrate and recover Azure Communication Services chat into your own PostgreSQL database." width="820">
 </p>
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/threadvault"><img alt="npm" src="https://img.shields.io/npm/v/threadvault?style=flat-square&labelColor=161B22&color=6D3BEB&logo=npm&logoColor=white"></a>
+  <a href="https://github.com/Het101/threadvault/actions/workflows/ci.yml"><img alt="ci" src="https://img.shields.io/github/actions/workflow/status/Het101/threadvault/ci.yml?branch=main&style=flat-square&labelColor=161B22&label=ci&logo=githubactions&logoColor=white"></a>
+  <a href="https://nodejs.org"><img alt="node" src="https://img.shields.io/node/v/threadvault?style=flat-square&labelColor=161B22&color=6D3BEB&logo=nodedotjs&logoColor=white"></a>
+  <a href="https://github.com/Het101/threadvault/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/npm/l/threadvault?style=flat-square&labelColor=161B22&color=6D3BEB"></a>
+</p>
+
 **Your Azure Communication Services chat resource should be disposable. Right now it isn't.**
 
-[![npm](https://img.shields.io/npm/v/threadvault.svg)](https://www.npmjs.com/package/threadvault)
-[![CI](https://github.com/Het101/threadvault/actions/workflows/ci.yml/badge.svg)](https://github.com/Het101/threadvault/actions/workflows/ci.yml)
-[![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/Het101/threadvault/blob/main/LICENSE)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/Het101/threadvault/blob/main/CONTRIBUTING.md)
 
 ACS gives you no history export, and every identity it mints is scoped to one resource — `8:acs:<resourceGuid>_<userGuid>`. Move, rotate, or lose that resource and every identity you stored turns to garbage in the same instant. The only way back is a full REST walk plus a replay you write yourself, under pressure, at the worst possible time.
 
