@@ -4,7 +4,7 @@ import type { Rec } from '../src/mirror/types.ts';
 
 const createdUsers: string[] = [];
 const createdThreads: Array<{ topic: string }> = [];
-const addedParticipants: Array<{ communicationUserId: string; displayName?: string }> = [];
+const addedParticipants: Array<{ id: { communicationUserId: string }; displayName?: string }> = [];
 const sentMessages: Array<{ content: string; metadata?: Record<string, string> }> = [];
 
 vi.mock('../src/acs/client.ts', () => {
@@ -105,7 +105,7 @@ describe('migrateApply', () => {
       sourceStream: recs(fixture),
       targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
     });
-    expect(stats).toEqual({ threads: 1, participants: 2, messages: 1, identitiesMinted: 0 });
+    expect(stats).toEqual({ threads: 1, participants: 2, messages: 1, identitiesMinted: 0, skipped: 0 });
     expect(createdThreads).toHaveLength(0);
     expect(sentMessages).toHaveLength(0);
   });
@@ -138,5 +138,86 @@ describe('migrateApply', () => {
     expect(sentMessages[0]?.metadata?.originalCreatedOn).toBe('2022-01-01T12:00:00.000Z');
     expect(sentMessages[0]?.metadata?.replayed).toBe('true');
     expect(sentMessages[0]?.metadata?.originalSenderAcsId).toBe('8:acs:old_user');
+  });
+});
+
+describe('migrateApply regressions', () => {
+  beforeEach(() => {
+    createdUsers.length = 0;
+    createdThreads.length = 0;
+    addedParticipants.length = 0;
+    sentMessages.length = 0;
+  });
+
+  const control: Rec = {
+    kind: 'message',
+    legacyThreadId: '19:old@thread.v2',
+    messageId: 'm-ctl',
+    type: 'participantAdded',
+    sequenceId: '2',
+    content: null,
+    senderAcsId: '8:acs:old_sys',
+    senderDisplayName: null,
+    ourSenderUserId: null,
+    createdOn: '2022-01-01T12:01:00.000Z',
+    editedOn: null,
+    deletedOn: null,
+    metadata: null,
+  };
+
+  it('does not replay ACS control messages as empty text', async () => {
+    const stats = await migrateApply({
+      connectionString: 'endpoint=https://mock.communication.azure.com/;accesskey=mock',
+      sourceStream: recs([...fixture, control]),
+      targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      commit: true,
+    });
+    expect(stats.skipped).toBe(1);
+    expect(stats.messages).toBe(1);
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages.some((m) => m.content === '')).toBe(false);
+  });
+
+  it('reuses a supplied identity map instead of minting a rival set', async () => {
+    const identityMap = new Map([
+      ['8:acs:old_sys', '8:acs:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa_kept-sys'],
+      ['8:acs:old_user', '8:acs:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa_kept-user'],
+    ]);
+    const stats = await migrateApply({
+      connectionString: 'endpoint=https://mock.communication.azure.com/;accesskey=mock',
+      sourceStream: recs(fixture),
+      targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      commit: true,
+      identityMap,
+    });
+    expect(stats.identitiesMinted).toBe(0);
+    expect(addedParticipants.map((p) => p.id.communicationUserId)).toEqual([
+      '8:acs:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa_kept-sys',
+      '8:acs:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa_kept-user',
+    ]);
+  });
+
+  it('records every minted identity in the map so the caller can persist it', async () => {
+    const identityMap = new Map<string, string>();
+    await migrateApply({
+      connectionString: 'endpoint=https://mock.communication.azure.com/;accesskey=mock',
+      sourceStream: recs(fixture),
+      targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      commit: true,
+      identityMap,
+    });
+    expect([...identityMap.keys()].sort()).toEqual(['8:acs:old_sys', '8:acs:old_user']);
+  });
+
+  it('does not count participants or messages for a thread that failed to create', async () => {
+    const orphan: Rec[] = [fixture[1]!, fixture[3]!];
+    const stats = await migrateApply({
+      connectionString: 'endpoint=https://mock.communication.azure.com/;accesskey=mock',
+      sourceStream: recs(orphan),
+      targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      commit: true,
+    });
+    expect(stats).toMatchObject({ threads: 0, participants: 0, messages: 0 });
+    expect(sentMessages).toHaveLength(0);
   });
 });

@@ -2,7 +2,7 @@ import { createAcs, probeResource } from '../acs/client.ts';
 import { isKnownGuid, resolveOriginalSenderUserId } from '../acs/identity.ts';
 import { withRetry } from '../acs/retry.ts';
 import { log, logError } from '../log.ts';
-import type { Rec } from '../mirror/types.ts';
+import { isReplayable, type Rec } from '../mirror/types.ts';
 
 type BufferedParticipant = {
   id: { communicationUserId: string };
@@ -13,6 +13,8 @@ type BufferedMessage = {
   content: string;
   senderDisplayName: string | undefined;
   metadata: Record<string, string>;
+  /** Target-resource identity to send as, if this sender was mapped. */
+  senderAcsId: string | null;
 };
 
 export type ApplyOpts = {
@@ -21,6 +23,16 @@ export type ApplyOpts = {
   targetResourceGuid: string;
   /** Writes nothing unless true. Default is dry-run. */
   commit?: boolean;
+  /**
+   * old ACS id -> identity on the target resource. Read before minting and
+   * mutated in place so the caller can persist it, and a re-run reuses the same
+   * identities instead of minting a second orphaned set.
+   *
+   * Without it the replay mints a throwaway identity for every participant,
+   * which means no real user - not even the system user - can open the threads
+   * that were just replayed. Losing the map loses the estate.
+   */
+  identityMap?: Map<string, string>;
 };
 
 export type ApplyStats = {
@@ -28,6 +40,8 @@ export type ApplyStats = {
   participants: number;
   messages: number;
   identitiesMinted: number;
+  /** ACS control messages (participantAdded, topicUpdated, ...) not replayed. */
+  skipped: number;
 };
 
 function replayMetadata(rec: Extract<Rec, { kind: 'message' }>): Record<string, string> {
@@ -58,16 +72,27 @@ export async function migrateApply(opts: ApplyOpts): Promise<ApplyStats> {
     );
   }
 
-  const stats: ApplyStats = { threads: 0, participants: 0, messages: 0, identitiesMinted: 0 };
+  const stats: ApplyStats = {
+    threads: 0,
+    participants: 0,
+    messages: 0,
+    identitiesMinted: 0,
+    skipped: 0,
+  };
 
   if (!opts.commit) {
     for await (const rec of opts.sourceStream) {
       if (rec.kind === 'thread') stats.threads++;
       else if (rec.kind === 'participant') stats.participants++;
-      else if (rec.kind === 'message') stats.messages++;
+      else if (rec.kind === 'message') {
+        if (isReplayable(rec)) stats.messages++;
+        else stats.skipped++;
+      }
     }
+    const skipNote = stats.skipped ? `, skipping ${stats.skipped} ACS control message(s)` : '';
     log(
-      `Dry run: would replay ${stats.threads} thread(s), ${stats.participants} participant(s), ${stats.messages} message(s). Pass --commit to write.`,
+      `Dry run: would replay ${stats.threads} thread(s), ${stats.participants} participant(s), ` +
+        `${stats.messages} message(s)${skipNote}. Pass --commit to write.`,
     );
     return stats;
   }
@@ -78,7 +103,7 @@ export async function migrateApply(opts: ApplyOpts): Promise<ApplyStats> {
   const migratorChat = await acs.chatFor(migratorId);
 
   const targetIdCache = new Map<string, string>();
-  const identityCache = new Map<string, string>();
+  const identityCache = opts.identityMap ?? new Map<string, string>();
 
   const getOrMintIdentity = async (oldAcsId: string): Promise<string> => {
     const hit = identityCache.get(oldAcsId);
@@ -112,15 +137,25 @@ export async function migrateApply(opts: ApplyOpts): Promise<ApplyStats> {
       await withRetry(`addParticipants ${targetThreadId}`, () =>
         tc.addParticipants({ participants: pBatch }),
       );
+      stats.participants += pBatch.length;
     }
 
+    const onThread = new Set(bufferParticipants.map((p) => p.id.communicationUserId));
     for (const msg of bufferMessages) {
+      // Send as the real sender where we have one on this thread, so the ACS
+      // sender and the metadata agree. Sending everything as the migrator is
+      // exactly the misattribution `doctor` check 3 exists to catch.
+      const asSender = msg.senderAcsId && onThread.has(msg.senderAcsId) ? msg.senderAcsId : null;
+      const client = asSender
+        ? (await acs.chatFor(asSender)).getChatThreadClient(targetThreadId)
+        : tc;
       await withRetry(`sendMessage ${targetThreadId}`, () =>
-        tc.sendMessage(
+        client.sendMessage(
           { content: msg.content },
           { senderDisplayName: msg.senderDisplayName, metadata: msg.metadata },
         ),
       );
+      stats.messages++;
     }
 
     bufferParticipants = [];
@@ -154,22 +189,27 @@ export async function migrateApply(opts: ApplyOpts): Promise<ApplyStats> {
           id: { communicationUserId: newAcsId },
           displayName: rec.displayName || undefined,
         });
-        stats.participants++;
       } else if (rec.kind === 'message') {
         if (!currentLegacyThreadId && targetIdCache.has(rec.legacyThreadId)) {
           currentLegacyThreadId = rec.legacyThreadId;
+        }
+        if (!isReplayable(rec)) {
+          stats.skipped++;
+          continue;
         }
         bufferMessages.push({
           content: rec.content ?? '',
           senderDisplayName: rec.senderDisplayName || undefined,
           metadata: replayMetadata(rec),
+          senderAcsId: rec.senderAcsId ? identityCache.get(rec.senderAcsId) ?? null : null,
         });
-        stats.messages++;
       }
     }
     await flushThread();
     log(
-      `Migrate apply completed. Threads: ${stats.threads}, Participants: ${stats.participants}, Messages: ${stats.messages}, Identities minted: ${stats.identitiesMinted}`,
+      `Migrate apply completed. Threads: ${stats.threads}, ` +
+        `Participants: ${stats.participants}, Messages: ${stats.messages}, ` +
+        `Identities minted: ${stats.identitiesMinted}, Control skipped: ${stats.skipped}`,
     );
     return stats;
   } finally {
