@@ -24,6 +24,15 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
 
+      # Node 22 ships npm 10, which has no OIDC support. Trusted publishing
+      # needs npm 11.5.1 or newer, so without this the publish step falls back
+      # to looking for a token that no longer exists.
+      - name: npm new enough for trusted publishing
+        run: |
+          set -e
+          npm install -g npm@latest
+          npm --version
+
       - run: npm ci
 
       # A tag that disagrees with package.json publishes the wrong version
@@ -40,6 +49,7 @@ jobs:
           fi
           echo "tag and package.json agree on $pkg"
 
+      - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
@@ -56,7 +66,10 @@ jobs:
           ./node_modules/.bin/threadvault migrate verify --help > /dev/null
           echo "installed bin works"
 
+      # No NODE_AUTH_TOKEN. The trusted publisher configured on npm lets this
+      # workflow authenticate over OIDC, so there is no token in a secret to
+      # leak, rotate or expire. An empty NODE_AUTH_TOKEN would actually break
+      # it: setup-node writes it into .npmrc, and npm would try that empty
+      # credential instead of falling back to OIDC.
       - name: publish to npm
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

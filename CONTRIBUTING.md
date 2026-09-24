@@ -122,7 +122,9 @@ the tag and `package.json` disagree, runs typecheck, tests and build, installs
 the packed tarball into an empty directory and runs the binary, and only then
 publishes with npm provenance.
 
-It needs an `NPM_TOKEN` repository secret (an npm automation token).
+It authenticates to npm over OIDC through a trusted publisher, so there is no
+`NPM_TOKEN` secret and nothing to rotate. npm verifies the publish really came
+from this repository, from `release.yml`, at that commit.
 
 ## Where things live
 
