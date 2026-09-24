@@ -22,6 +22,10 @@ Threadvault is that walk and that replay, already written, already survived.
 
 Mirror once and ACS becomes a cache. Every message lands in **your** database under **your** user IDs, with the **original** timestamps — so the day you need a new resource, you replay instead of negotiate.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Het101/threadvault/main/docs/assets/without-with.png" alt="Without Threadvault, moving the resource makes every stored identity garbage. With Threadvault, you replay from your own Postgres." width="760">
+</p>
+
 ---
 
 > ### Born from a production incident
@@ -41,6 +45,10 @@ Nothing to install — `doctor` never reads or changes a message, so it is safe 
 ```bash
 npx threadvault doctor
 ```
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Het101/threadvault/main/docs/assets/doctor-output.png" alt="threadvault doctor output: five named checks, four clean, one reporting a thread whose only participant is the system identity" width="760">
+</p>
 
 Or keep it around:
 
