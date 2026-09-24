@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
+## [0.2.1] - 2026-09-24
+
+### Fixed
+
+- `redactPhi` crashed on a cyclic object. An Azure SDK error carries request
+  and response objects that point at each other, so redacting one overflowed
+  the stack and killed the process — while reporting an error, which took the
+  diagnostic down with it. It now renders a genuine cycle as `[circular]`,
+  caps depth, and shows an `Error` as name and message rather than `{}`.
+- `migrate rehearse` carried a failure branch that could never run; every
+  assertion throws, so it would only have replaced a specific assertion
+  message with a useless one.
+
 ## [0.2.0] - 2026-09-24
 
 ### Added
@@ -63,5 +76,6 @@ changes may land in a minor release; they are always called out below.
 Initial release: `probe`, `doctor`, `mirror backfill`, `migrate extract`,
 `migrate rehearse`, `migrate apply`.
 
+[0.2.1]: https://github.com/Het101/threadvault/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Het101/threadvault/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Het101/threadvault/releases/tag/v0.1.0
