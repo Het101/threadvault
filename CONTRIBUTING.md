@@ -16,7 +16,9 @@ cd threadvault
 npm install          # also installs the git hooks
 ```
 
-Node **22 or newer**. The Azure SDK will not install on 20.
+Node **22 or newer** to run Threadvault — the Azure SDK will not install on 20.
+
+To *develop* it you want **Node 22.12 or newer**: the test toolchain pulls Vite 8, which requires `^20.19.0 || >=22.12.0`, and `.npmrc` sets `engine-strict=true`, so `npm install` on Node 22.0–22.11 fails with a confusing peer-dependency error. The published package itself only needs `>=22`; this floor applies to contributors, not users.
 
 ```bash
 npm run dev -- doctor --help   # run from source, no build step

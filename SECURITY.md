@@ -43,6 +43,16 @@ These are the guarantees the codebase is built to keep. A defect in any of them 
 - **The replay ledger contains ACS identities.** They are resource-scoped identifiers, not credentials, and are useless without the connection string.
 - **`PG_SSL_NO_VERIFY=true` disables certificate verification.** It is an opt-in escape hatch for a private CA, documented as such, and off by default.
 
+## Known accepted advisories
+
+CI fails the build on any **high or critical** advisory. These moderates are known, assessed, and accepted:
+
+| Advisory | Where | Why it is accepted |
+|---|---|---|
+| [GHSA-w5hq-g745-h8pq](https://github.com/advisories/GHSA-w5hq-g745-h8pq) — `uuid` missing buffer bounds check | `@azure/communication-chat` -> `@azure/communication-signaling` -> `uuid@8.3.2` | Not reachable. The bug needs `uuid` called with a caller-supplied `buf`; Threadvault never calls `uuid` and never uses the realtime signaling path at all — it only makes REST list/send calls. The only npm-offered fix is downgrading `@azure/communication-chat`, which would reintroduce the Node compatibility problems this project already resolved. |
+
+Re-assessed whenever the Azure SDK is bumped. If you believe one of these *is* reachable, that is exactly the kind of report worth sending.
+
 ## Running it safely
 
 - Point it at a **non-production** resource first. `migrate rehearse` exists so you can prove the four durability goals on something disposable.
