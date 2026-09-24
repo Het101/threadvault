@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseRec } from '../src/mirror/types.ts';
 
 describe('parseRec', () => {
-  it('parses the three Wizlo-compatible kinds and skips junk', () => {
+  it('parses the three legacy-compatible kinds and skips junk', () => {
     expect(parseRec('')).toBeNull();
     expect(parseRec('{')).toBeNull();
     expect(parseRec('{"kind":"nope"}')).toBeNull();

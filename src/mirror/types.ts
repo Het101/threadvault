@@ -1,6 +1,6 @@
 /**
  * One line of an extract dump. Discriminated so a single file stays streamable.
- * Field names are byte-compatible with Wizlo's acs-migrate-messages.ts dumps
+ * Field names are byte-compatible with the original acs-migrate-messages.ts dumps
  * so existing JSONL remains valid input to `migrate apply`.
  */
 export type Rec =

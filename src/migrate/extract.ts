@@ -14,7 +14,7 @@ export type ExtractOpts = {
 
 /**
  * Walk ACS and write a JSONL extract. Read-only against ACS.
- * Field names stay byte-compatible with existing Wizlo dumps.
+ * Field names stay byte-compatible with existing production dumps.
  */
 export async function migrateExtract(opts: ExtractOpts): Promise<{
   threads: number;

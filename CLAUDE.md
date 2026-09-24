@@ -4,7 +4,7 @@ Standalone CLI. Makes an Azure Communication Services chat resource disposable b
 
 ## Security
 
-1. **Never read or print Wizlo `api/.env`.** It holds live ACS connection strings and production database credentials. Reference environment variables **by name only**.
+1. **Never read or print the host application's `api/.env`.** It holds live ACS connection strings and production database credentials. Reference environment variables **by name only**.
 2. **Never point this tool at a production ACS resource or production database** without explicit, per-run human approval.
 3. **Chat message bodies are PHI.** No message bodies in logs, test fixtures, issues, or commit messages. `src/log.ts` strips `content` / `text` / `html` / `body`. Keep it that way.
 4. Do not commit, push, or open a PR without explicit human review.
@@ -39,4 +39,4 @@ src/mirror/           extract + sinks (jsonl | postgres)
 src/migrate/          apply + rehearse
 ```
 
-JSONL `Rec` field names stay byte-compatible with Wizlo extracts (`legacyThreadId`, `ourUserId`, `ourSenderUserId`) so existing dumps remain valid input.
+JSONL `Rec` field names stay byte-compatible with the original production extract format (`legacyThreadId`, `ourUserId`, `ourSenderUserId`) so existing dumps remain valid input.
