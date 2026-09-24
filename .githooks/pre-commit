@@ -52,7 +52,36 @@ if echo "$added" | grep -qE '_authToken[[:space:]]*=[[:space:]]*[^$][^[:space:]]
   fail "an _authToken value looks like it is being committed. Reference it as \${NPM_TOKEN} instead."
 fi
 
-# --- 2. The code has to actually work ----------------------------------------
+# --- 2. Commits have to be signed ---------------------------------------------
+# main rejects unsigned commits, so without this the news arrives at merge time,
+# after CI has run. A pre-commit hook cannot inspect a signature that does not
+# exist yet, so it checks that signing is configured; pre-push checks the
+# commits themselves, including the ones rebases produce.
+
+if [ "$(git config --get commit.gpgsign)" != "true" ]; then
+  fail "commit signing is off, and main requires signed commits.
+    git config commit.gpgsign true
+    git config rebase.gpgsign true
+  No key yet? SSH signing is the shortest route:
+    git config gpg.format ssh
+    git config user.signingkey ~/.ssh/id_ed25519.pub
+  then add that public key to https://github.com/settings/keys a second time,
+  as a signing key."
+fi
+
+if [ -z "$(git config --get user.signingkey)" ] && [ "$(git config --get gpg.format)" != "ssh" ]; then
+  fail "commit.gpgsign is on but user.signingkey is unset, so the commit will fail to sign."
+fi
+
+# A rebase that is not told to sign strips the signatures off everything it
+# rewrites, which is how a signed branch becomes an unsigned one on the way to a
+# pull request.
+if [ "$(git config --get rebase.gpgsign)" != "true" ]; then
+  echo "pre-commit: note — rebase.gpgsign is not set, so a rebase will unsign these commits." >&2
+  echo "            git config rebase.gpgsign true" >&2
+fi
+
+# --- 3. The code has to actually work ----------------------------------------
 if echo "$staged" | grep -qE '\.(ts|json)$'; then
   echo "pre-commit: lint"
   npm run --silent lint
