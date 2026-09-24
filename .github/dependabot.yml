@@ -1,0 +1,24 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # The Azure SDK packages have to move together: a partial bump is how the
+      # Node 20 compatibility mess started.
+      azure:
+        patterns: ["@azure/*", "@azure-rest/*"]
+      dev:
+        dependency-type: development
+    commit-message:
+      prefix: "build"
+      prefix-development: "build"
+      include: scope
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"

@@ -1,0 +1,56 @@
+name: Bug report
+description: Something did not do what it said it would.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Redact freely.** Never paste chat message content, a connection string, a real
+        resource GUID, or a database URL. A `--json` report with ids removed is usually
+        enough, and a vague report is better than a leaked one.
+
+        Security problems do not belong here — see [SECURITY.md](../blob/main/SECURITY.md).
+  - type: input
+    id: command
+    attributes:
+      label: What did you run?
+      placeholder: threadvault migrate apply --from-jsonl dump.jsonl --state replay.jsonl --commit
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations: { required: true }
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead?
+      description: Output or an error, redacted.
+      render: shell
+    validations: { required: true }
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part?
+      options: [doctor, probe, mirror backfill, migrate extract, migrate plan, migrate rehearse, migrate apply, migrate verify, not sure]
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: 0.1.0, or the short SHA
+    validations: { required: true }
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      placeholder: node -v
+    validations: { required: true }
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Before submitting
+      options:
+        - label: This contains no message content, credentials, real names or production identifiers
+          required: true
+        - label: I was running against a non-production resource, or I understand the risk if not
