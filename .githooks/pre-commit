@@ -18,7 +18,11 @@ staged=$(git diff --cached --name-only --diff-filter=ACM)
 # These are the rules the whole tool exists to protect. A commit is the last
 # cheap place to catch them; after a push to a public repo it is too late.
 
-if echo "$staged" | grep -qE '(^|/)\.env$|(^|/)\.env\.[a-z]+$'; then
+# .env and .env.<anything>, except the templates that are meant to be committed.
+# The first cut caught .env.example itself, which is the one .env file this repo
+# has always shipped — a check that blocks the correct thing teaches people to
+# pass --no-verify, which costs more than it saves.
+if echo "$staged" | grep -E '(^|/)\.env($|\.)' | grep -qvE '\.env\.(example|sample|template|dist)$'; then
   fail "refusing to commit a .env file. Use .env.example with placeholders."
 fi
 
