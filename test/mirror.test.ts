@@ -149,3 +149,49 @@ describe('sinkPostgres records identities', () => {
     expect(idQuery?.values[3]).toBe('Alice');
   });
 });
+
+describe('re-running the backfill repairs, not just deduplicates', () => {
+  it('refreshes attribution and timing on conflict, not only content', async () => {
+    const executed: Array<{ sql: string }> = [];
+    const db = {
+      query: vi.fn().mockImplementation((sql: string) => {
+        executed.push({ sql });
+        if (sql.includes('SELECT our_user_id, acs_id')) return Promise.resolve({ rows: [] });
+        if (sql.includes('INSERT INTO threadvault_threads')) return Promise.resolve({ rows: [{ id: 'th-1' }] });
+        // The message path looks its thread up when the cache is cold; without
+        // a row it correctly skips the message entirely.
+        if (sql.includes('SELECT id FROM threadvault_threads')) return Promise.resolve({ rows: [{ id: 'th-1' }] });
+        return Promise.resolve({ rowCount: 1, rows: [] });
+      }),
+    } as unknown as PgClient;
+
+    await sinkPostgres(
+      asyncGeneratorFromArray<Rec>([
+        {
+          kind: 'message',
+          legacyThreadId: '19:t@thread.v2',
+          messageId: 'm-1',
+          type: 'text',
+          sequenceId: '1',
+          content: 'lorem',
+          senderAcsId: null,
+          senderDisplayName: null,
+          ourSenderUserId: 'u-alice',
+          createdOn: '2023-01-01T10:00:00.000Z',
+          editedOn: null,
+          deletedOn: null,
+          metadata: { originalSenderUserId: 'u-alice' },
+        },
+      ]),
+      db,
+    );
+
+    const msg = executed.find((q) => q.sql.includes('INSERT INTO threadvault_messages'));
+    expect(msg).toBeDefined();
+    // A mirror taken before the mapping existed has a null sender. Re-running
+    // after fixing it has to actually fix it.
+    expect(msg?.sql).toMatch(/sender_user_id = EXCLUDED\.sender_user_id/);
+    expect(msg?.sql).toMatch(/sent_at = EXCLUDED\.sent_at/);
+    expect(msg?.sql).toMatch(/metadata = EXCLUDED\.metadata/);
+  });
+});

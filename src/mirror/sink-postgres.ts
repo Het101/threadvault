@@ -21,7 +21,13 @@ export function shadowUserId(acsId: string): string {
 
 /**
  * Upserts a stream of `Rec` rows into the threadvault_* Postgres tables.
- * Safely ignores duplicates (idempotent due to UNIQUE constraints).
+ *
+ * Re-running is both safe and useful. A second pass refreshes every column the
+ * source is authoritative for — attribution above all. The conflict clause used
+ * to update only content and the edit/delete stamps, so a mirror taken before
+ * identities were known kept its null sender_user_id forever: you could fix the
+ * mapping, run it again, and nothing would change. Repair is the point of
+ * running it twice.
  */
 export async function sinkPostgres(
   stream: AsyncIterable<Rec>,
@@ -134,9 +140,13 @@ export async function sinkPostgres(
           sent_at, edited_at, deleted_at, metadata
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         ON CONFLICT (external_message_id) DO UPDATE SET
+          sender_user_id = EXCLUDED.sender_user_id,
           content = EXCLUDED.content,
+          message_type = EXCLUDED.message_type,
+          sent_at = EXCLUDED.sent_at,
           edited_at = EXCLUDED.edited_at,
-          deleted_at = EXCLUDED.deleted_at;
+          deleted_at = EXCLUDED.deleted_at,
+          metadata = EXCLUDED.metadata;
       `;
       const res = await db.query<{id: string}>(sql, [
         threadUuid,
