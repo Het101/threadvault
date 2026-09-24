@@ -115,7 +115,10 @@ threadvault doctor --concurrency 8 # widen the ACS walk
 threadvault mirror backfill --reader-acs-id 8:acs:…            # dry run: counts, writes nothing
 threadvault mirror backfill --reader-acs-id 8:acs:… --commit   # for real
 threadvault mirror backfill --reader-acs-id 8:acs:… --to-jsonl dump.jsonl
+threadvault mirror backfill --reader-acs-id 8:acs:… --concurrency 8 --commit
 ```
+
+`--concurrency` (default 4) is how many threads are walked at once. Overlapping request latency rather than waiting out each round trip is roughly the difference between 2 and 25 ACS operations per second, which on a real estate is the difference between an afternoon and a coffee. Messages *inside* a thread always stay serial — ACS assigns `sequenceId` on receipt, so ordering them concurrently would scramble the thread.
 
 The schema is created for you (`threadvault_*` tables, `CREATE TABLE IF NOT EXISTS`). It does not touch your own tables.
 
@@ -129,7 +132,7 @@ Three properties the mirror guarantees, all of them learned the hard way:
 
 ```bash
 # 1. Export the old resource. Read-only.
-threadvault migrate extract --out dump.jsonl --reader-acs-id 8:acs:…
+threadvault migrate extract --out dump.jsonl --reader-acs-id 8:acs:… --concurrency 8
 
 # 2. Read the dump before you trust it.
 threadvault migrate plan --from-jsonl dump.jsonl
@@ -189,6 +192,7 @@ Back the file up, and use it to update your own user rows once the replay lands.
 |---|---|
 | **Dry run by default** | Every writing command needs `--commit`. The dry run never opens a write connection. |
 | **Resumable replay** | With `--state`, an interrupted `migrate apply` resumes instead of duplicating the estate. Progress is recorded as it happens, not at the end. |
+| **One bad thread is not a failed run** | A thread that cannot be read is reported and skipped, with a count at the end. An extract over thousands of threads does not end on one of them. |
 | **Resource GUID guard** | `ACS_EXPECT_RESOURCE` is required for any ACS write. The command probes the target and refuses on mismatch. |
 | **Participants always restored** | There is no flag to skip them. Both production defects came from skipping them. |
 | **PHI-safe logging** | `content` / `text` / `html` / `body` are stripped before anything is printed, `--json` output included. `doctor` discards message bodies at the SDK boundary and never reads them at all. A test fails the build if any source file writes to stdout without going through the redacting logger. |

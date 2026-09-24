@@ -12,6 +12,8 @@ export type MirrorOpts = {
   jsonlPath?: string;
   fromJsonl?: string;
   threadIds?: string[];
+  /** Threads walked at once. Messages inside a thread always stay serial. */
+  concurrency?: number;
 };
 
 export type MirrorStats = { threads: number; participants: number; messages: number };
@@ -29,6 +31,7 @@ export async function mirrorBackfill(opts: MirrorOpts): Promise<MirrorStats | vo
       connectionString: opts.connectionString,
       readerAcsId: opts.readerAcsId,
       threadIds: opts.threadIds,
+      concurrency: opts.concurrency,
     });
   }
 

@@ -8,6 +8,8 @@ export type ExtractOpts = {
   readerAcsId: string;
   outPath: string;
   threadIds?: string[];
+  /** Threads walked at once. Messages inside a thread always stay serial. */
+  concurrency?: number;
 };
 
 /**
@@ -23,6 +25,7 @@ export async function migrateExtract(opts: ExtractOpts): Promise<{
     connectionString: opts.connectionString,
     readerAcsId: opts.readerAcsId,
     threadIds: opts.threadIds,
+    concurrency: opts.concurrency,
   });
 
   let threads = 0;

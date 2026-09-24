@@ -167,8 +167,9 @@ mirror
   .option('--from-jsonl <path>', 'read from a JSONL file instead of ACS')
   .option('--to-jsonl <path>', 'write to a JSONL file instead of Postgres')
   .option('--reader-acs-id <id>', 'the ACS identity to perform the ACS read as')
+  .option('--concurrency <n>', 'threads walked at once (messages stay serial)', '4')
   .option('--commit', 'must be passed to write to Postgres (otherwise dry-run)')
-  .action(async (opts: { fromJsonl?: string; toJsonl?: string; readerAcsId?: string; commit?: boolean }) => {
+  .action(async (opts: { fromJsonl?: string; toJsonl?: string; readerAcsId?: string; concurrency?: string; commit?: boolean }) => {
     try {
       const cs = acsConnectionString();
       const dbUrl = process.env.DATABASE_URL;
@@ -196,6 +197,7 @@ mirror
         db,
         jsonlPath: opts.toJsonl,
         fromJsonl: opts.fromJsonl,
+        concurrency: Math.max(1, Number(opts.concurrency ?? 4)),
       });
 
       if (stats) {
@@ -255,7 +257,8 @@ migrate
   .description('Walk ACS and write a JSONL extract. Read-only.')
   .requiredOption('--out <path>', 'JSONL output path')
   .option('--reader-acs-id <id>', 'ACS identity to read as')
-  .action(async (opts: { out: string; readerAcsId?: string }) => {
+  .option('--concurrency <n>', 'threads walked at once (messages stay serial)', '4')
+  .action(async (opts: { out: string; readerAcsId?: string; concurrency?: string }) => {
     try {
       const cs = acsConnectionString();
       if (!cs) {
@@ -270,6 +273,7 @@ migrate
         connectionString: cs,
         readerAcsId: opts.readerAcsId,
         outPath: opts.out,
+        concurrency: Math.max(1, Number(opts.concurrency ?? 4)),
       });
     } catch (e) {
       logError(e instanceof Error ? e.message : String(e));

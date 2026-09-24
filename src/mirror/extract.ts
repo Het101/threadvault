@@ -1,7 +1,8 @@
 import { asCommunicationUserId } from '../acs/identity.ts';
 import { createAcs } from '../acs/client.ts';
+import { poolMap } from '../acs/pool.ts';
 import { withRetry } from '../acs/retry.ts';
-import { logError } from '../log.ts';
+import { log, logError } from '../log.ts';
 import type { Rec } from './types.ts';
 
 export type ExtractOpts = {
@@ -9,7 +10,15 @@ export type ExtractOpts = {
   readerAcsId: string;
   /** If provided, extract only these threads instead of calling listChatThreads. */
   threadIds?: string[];
+  /** Threads walked at once. Messages inside a thread always stay serial. */
+  concurrency?: number;
 };
+
+function toIso(value: Date | string | undefined | null): string | null {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
 
 /** Yields raw communication records as extracted from ACS. */
 export async function* extractAcs(
@@ -33,77 +42,100 @@ export async function* extractAcs(
     }
   }
 
-  for (const threadId of threads) {
+  /**
+   * Everything for one thread, in replay order. Returned as a group so that
+   * pooling threads never interleaves one thread's records with another's.
+   *
+   * A thread that cannot be read is reported and dropped rather than thrown:
+   * one unreadable thread must not end a walk over thousands.
+   */
+  const extractThread = async (threadId: string): Promise<Rec[]> => {
+    const out: Rec[] = [];
     const tc = primaryChat.getChatThreadClient(threadId);
 
-    // 1. Thread node
-    let t: Awaited<ReturnType<typeof tc.getProperties>> | undefined;
+    let t: Awaited<ReturnType<typeof tc.getProperties>>;
     try {
       t = await withRetry(`getThread ${threadId}`, () => tc.getProperties());
     } catch (e) {
       logError(`Cannot get properties for thread ${threadId}`, {
         error: e instanceof Error ? e.message : String(e),
       });
-      continue;
+      return out;
     }
 
-    yield {
+    out.push({
       kind: 'thread',
       ourThreadId: null, // Host mapping takes care of this later
       legacyThreadId: threadId,
       topic: t.topic || '',
-      createdOn: t.createdOn ? t.createdOn.toISOString() : null,
+      createdOn: toIso(t.createdOn),
       createdByAcsId: asCommunicationUserId(t.createdBy),
-      deletedOn: t.deletedOn ? t.deletedOn.toISOString() : null,
+      deletedOn: toIso(t.deletedOn),
       readerAcsId: opts.readerAcsId,
-    };
-
-    // 2. Participants
-    const participants = await withRetry(`listParticipants ${threadId}`, async () => {
-      const out = [];
-      for await (const p of tc.listParticipants()) {
-        out.push(p);
-      }
-      return out;
     });
 
-    for (const p of participants) {
-      const id = asCommunicationUserId(p.id);
-      if (!id) continue;
-      yield {
-        kind: 'participant',
-        legacyThreadId: threadId,
-        acsId: id,
-        displayName: p.displayName || null,
-        ourUserId: null,
-      };
-    }
-
-    // 3. Messages
-    const messages = await withRetry(`listMessages ${threadId}`, async () => {
-      const out = [];
-      for await (const m of tc.listMessages()) {
-        out.push(m);
+    try {
+      const participants = await withRetry(`listParticipants ${threadId}`, async () => {
+        const acc = [];
+        for await (const p of tc.listParticipants()) acc.push(p);
+        return acc;
+      });
+      for (const p of participants) {
+        const id = asCommunicationUserId(p.id);
+        if (!id) continue;
+        out.push({
+          kind: 'participant',
+          legacyThreadId: threadId,
+          acsId: id,
+          displayName: p.displayName || null,
+          ourUserId: null,
+        });
       }
-      return out;
-    });
 
-    for (const m of messages) {
-      yield {
-        kind: 'message',
-        legacyThreadId: threadId,
-        messageId: m.id,
-        type: m.type,
-        sequenceId: m.sequenceId,
-        content: m.content?.message || null,
-        senderAcsId: asCommunicationUserId(m.sender),
-        senderDisplayName: m.senderDisplayName || null,
-        ourSenderUserId: m.metadata?.originalSenderUserId || null,
-        createdOn: m.createdOn ? (m.createdOn instanceof Date ? m.createdOn.toISOString() : new Date(m.createdOn).toISOString()) : new Date().toISOString(),
-        editedOn: m.editedOn ? (m.editedOn instanceof Date ? m.editedOn.toISOString() : new Date(m.editedOn).toISOString()) : null,
-        deletedOn: m.deletedOn ? (m.deletedOn instanceof Date ? m.deletedOn.toISOString() : new Date(m.deletedOn).toISOString()) : null,
-        metadata: m.metadata || null,
-      };
+      const messages = await withRetry(`listMessages ${threadId}`, async () => {
+        const acc = [];
+        for await (const m of tc.listMessages()) acc.push(m);
+        return acc;
+      });
+      for (const m of messages) {
+        out.push({
+          kind: 'message',
+          legacyThreadId: threadId,
+          messageId: m.id,
+          type: m.type,
+          sequenceId: m.sequenceId,
+          content: m.content?.message || null,
+          senderAcsId: asCommunicationUserId(m.sender),
+          senderDisplayName: m.senderDisplayName || null,
+          ourSenderUserId: m.metadata?.originalSenderUserId || null,
+          createdOn: toIso(m.createdOn) ?? new Date().toISOString(),
+          editedOn: toIso(m.editedOn),
+          deletedOn: toIso(m.deletedOn),
+          metadata: m.metadata || null,
+        });
+      }
+    } catch (e) {
+      // Partial thread: keep what was read, say so, move on. Dropping the whole
+      // walk over one thread is how an extract becomes a manual job.
+      logError(`Incomplete extract for thread ${threadId}`, {
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return [];
     }
+
+    return out;
+  };
+
+  const ids = [...threads];
+  const concurrency = Math.max(1, opts.concurrency ?? 1);
+  let failed = 0;
+  for await (const group of poolMap(ids, concurrency, extractThread)) {
+    if (group.length === 0) failed++;
+    yield* group;
+  }
+  if (failed) {
+    logError(`${failed} of ${ids.length} thread(s) could not be extracted`);
+  } else if (concurrency > 1) {
+    log(`Extracted ${ids.length} thread(s) at concurrency ${concurrency}`);
   }
 }
