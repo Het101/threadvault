@@ -105,8 +105,7 @@ export function runChecks(input: DoctorInputs): Finding[] {
   for (const [threadId, parts] of input.acsParticipants) {
     const live = parts.filter(Boolean);
     if (live.length === 0) continue;
-    const onlySystem =
-      live.length > 0 && live.every((p) => systemAcsIds.has(p) || (systemOnResource?.acsId === p));
+    const onlySystem = live.every((p) => systemAcsIds.has(p) || systemOnResource?.acsId === p);
     if (onlySystem) {
       findings.push({
         check: 2,
