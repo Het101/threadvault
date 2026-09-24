@@ -6,6 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
+## [0.2.2] - 2026-09-24
+
+### Fixed
+
+- Reading a file no longer checks that it exists first. `existsSync` followed by
+  `readFileSync` leaves a window in which the file can be created, removed or
+  replaced, and the answer to the check is stale by the time the read runs
+  (CodeQL `js/file-system-race`). Affected the replay ledger and the config
+  loader. Only a genuinely missing file is treated as absent now; a permission
+  or I/O failure surfaces instead of being reported as "nothing here yet",
+  which would have silently restarted a replay.
+- A mistyped `--from-jsonl` path now says `extract not found: <path>` rather
+  than surfacing Node's raw `ENOENT` with an absolute path in it.
+
+### Security
+
+- Cleared GHSA-g7r4-m6w7-qqqr (esbuild development server, arbitrary file read
+  on Windows). Dev-only and never invoked, but the fix was a lockfile bump.
+- The remaining `uuid` advisory stays accepted and is documented in
+  `SECURITY.md`: not reachable, and npm's only fix downgrades the Azure SDK.
+
 ## [0.2.1] - 2026-09-24
 
 ### Fixed
@@ -76,6 +97,7 @@ changes may land in a minor release; they are always called out below.
 Initial release: `probe`, `doctor`, `mirror backfill`, `migrate extract`,
 `migrate rehearse`, `migrate apply`.
 
+[0.2.2]: https://github.com/Het101/threadvault/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Het101/threadvault/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Het101/threadvault/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Het101/threadvault/releases/tag/v0.1.0
