@@ -31,6 +31,8 @@ Mirror once and ACS becomes a cache. Every message lands in **your** database un
 > A resource move replayed 7,200 threads with participants turned off. Two defects followed: 7,022 messages showed the wrong author, and every thread rejected replies with `CommunicationError Forbidden`. Both were repairable only because the extract had preserved `metadata.originalSenderUserId` and the participant lists.
 >
 > Every rule below is a scar from that week. `doctor` exists to find these five things before they find you.
+>
+> **The full write-up, including what we got wrong and what to do if it is happening to you right now: [post-mortem](docs/postmortem-acs-chat-migration.md).**
 
 ---
 
@@ -303,6 +305,7 @@ Issues and pull requests welcome. Please don't include real chat content, connec
 | [SECURITY.md](https://github.com/Het101/threadvault/blob/main/SECURITY.md) | How to report a vulnerability, and the guarantees the code is built to keep |
 | [CHANGELOG.md](https://github.com/Het101/threadvault/blob/main/CHANGELOG.md) | What changed, including the breaking bits |
 | [ROADMAP.md](https://github.com/Het101/threadvault/blob/main/ROADMAP.md) | Where it is going, and what it will deliberately not do |
+| [Post-mortem](https://github.com/Het101/threadvault/blob/main/docs/postmortem-acs-chat-migration.md) | The incident that produced this tool, in full |
 | [CODE_OF_CONDUCT.md](https://github.com/Het101/threadvault/blob/main/CODE_OF_CONDUCT.md) | How we behave here |
 
 Threadvault is pre-1.0. The commands and their guarantees are stable; flags may still move, and anything that does will be called out in the changelog.
