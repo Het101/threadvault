@@ -1,6 +1,6 @@
 import type { PgClient } from '../db/pg.ts';
 import type { Rec } from './types.ts';
-import { resolveSentAt, resolveOriginalSenderUserId } from '../acs/identity.ts';
+import { parseAcsId, resolveSentAt, resolveOriginalSenderUserId } from '../acs/identity.ts';
 import { createHash } from 'node:crypto';
 
 /**
@@ -26,8 +26,8 @@ export function shadowUserId(acsId: string): string {
 export async function sinkPostgres(
   stream: AsyncIterable<Rec>,
   db: PgClient,
-): Promise<{ threads: number; participants: number; messages: number }> {
-  const stats = { threads: 0, participants: 0, messages: 0 };
+): Promise<{ threads: number; participants: number; messages: number; identities: number }> {
+  const stats = { threads: 0, participants: 0, messages: 0, identities: 0 };
   const threadIdCache = new Map<string, string>(); // legacy external id -> threadvault uuid
   const userAcsCache = new Map<string, string>(); // ACS id -> threadvault uuid
 
@@ -92,6 +92,26 @@ export async function sinkPostgres(
       `;
       const res = await db.query(sql, [threadUuid, ourUserUuid, rec.acsId, rec.displayName]);
       if (res.rowCount && res.rowCount > 0) stats.participants++;
+
+      // Record who this is on which resource. Nothing else writes this table,
+      // so without it the mirror can never map an ACS id back to a person: the
+      // cache above starts empty on every run, every participant becomes a
+      // fresh shadow, and `doctor` reading the mirror finds nobody to check.
+      // The resource GUID is already inside the ACS id, so no extra input is
+      // needed to fill it in.
+      const parsed = parseAcsId(rec.acsId);
+      if (parsed) {
+        await db.query(
+          `INSERT INTO threadvault_identities (our_user_id, acs_id, resource_guid, display_name)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (our_user_id, resource_guid) DO UPDATE SET
+             acs_id = EXCLUDED.acs_id,
+             display_name = COALESCE(EXCLUDED.display_name, threadvault_identities.display_name)`,
+          [ourUserUuid, rec.acsId, parsed.resourceGuid, rec.displayName],
+        );
+        userAcsCache.set(rec.acsId, ourUserUuid);
+        stats.identities++;
+      }
     }
 
     if (rec.kind === 'message') {

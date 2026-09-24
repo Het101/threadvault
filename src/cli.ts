@@ -225,7 +225,8 @@ mirror
       if (stats) {
         log(
           `Backfill ${opts.commit || opts.toJsonl ? 'complete' : 'dry run'}. ` +
-            `Threads: ${stats.threads}, Participants: ${stats.participants}, Messages: ${stats.messages}`,
+            `Threads: ${stats.threads}, Participants: ${stats.participants}, ` +
+            `Messages: ${stats.messages}, Identities: ${stats.identities}`,
         );
       } else {
         log('Backfill complete.');
