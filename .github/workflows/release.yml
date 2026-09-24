@@ -6,7 +6,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # Write, because this workflow drafts the GitHub release for the tag.
+  contents: write
   # Required for npm provenance: npm uses this to attest that the package was
   # built from this repo, at this commit, by this workflow. The npm page then
   # shows where it came from, which matters more than usual for a tool people
@@ -81,19 +82,46 @@ jobs:
       - name: stage the release on npm
         run: npm stage publish --provenance --access public
 
+      # Drafted, not published — the same bargain as the npm stage above. CI
+      # prepares both, a human publishes both. Otherwise a rejected npm stage
+      # leaves a GitHub release announcing a version nobody can install.
+      - name: draft the GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          ver="${GITHUB_REF_NAME#v}"
+          # This version's section of CHANGELOG.md, which is where the notes are
+          # already written. Read from the file rather than restating them here,
+          # so the two cannot drift.
+          awk -v hdr="## [$ver]" '
+            index($0, hdr) == 1 { found = 1; next }
+            found && /^## \[/   { exit }
+            found               { print }
+          ' CHANGELOG.md > /tmp/notes.md
+          if [ ! -s /tmp/notes.md ]; then
+            echo "::warning::no CHANGELOG section for $ver; using generated notes"
+            gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --generate-notes
+          else
+            gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --notes-file /tmp/notes.md
+          fi
+          echo "drafted release $GITHUB_REF_NAME"
+
       - name: how to release it
         run: |
           {
             echo "### Staged, not yet released"
             echo ""
-            echo "\`$GITHUB_REF_NAME\` passed every check and is staged on npm."
-            echo "It is not installable until you approve it:"
+            echo "\`$GITHUB_REF_NAME\` passed every check. The npm package is staged"
+            echo "and the GitHub release is drafted. Neither is public until you say so."
             echo ""
             echo '```bash'
             echo "npm stage list threadvault"
             echo "npm stage view <stage-id>      # confirm it is the right build"
-            echo "npm stage approve <stage-id>   # prompts for your 2FA code"
+            echo "npm stage approve <stage-id>   # your 2FA"
+            echo "gh release edit $GITHUB_REF_NAME --draft=false --latest"
             echo '```'
             echo ""
-            echo "To discard it instead: \`npm stage reject <stage-id>\`"
+            echo "To discard instead: \`npm stage reject <stage-id>\` and \`gh release delete $GITHUB_REF_NAME\`"
           } >> "$GITHUB_STEP_SUMMARY"
