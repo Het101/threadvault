@@ -49,7 +49,12 @@ Or keep it around:
 
 ```bash
 npm install -g threadvault
+threadvault doctor
 ```
+
+`npx threadvault`, not `npm threadvault` — the latter is not an npm subcommand,
+so npm ignores the word and answers about itself. `npm threadvault --version`
+prints *npm's* version, which looks like an answer and is not one.
 
 **Node 22 or newer.** The current Azure SDK will not install on 20.
 
@@ -326,6 +331,62 @@ host:
 
 Every value is validated as a bare SQL identifier and quoted. They are never interpolated as SQL.
 
+## Troubleshooting
+
+Everything here has happened to a real person.
+
+### `npm threadvault --version` prints something like `10.8.2`
+
+That is npm's version, not Threadvault's. `threadvault` is not an npm
+subcommand, so npm ignores it and answers `--version` about itself. Use:
+
+```bash
+npx threadvault --version        # without installing
+threadvault --version            # if installed globally
+```
+
+### `Invalid connection string`, or `no accesskey= in the connection string`
+
+Your shell ate the key. This:
+
+```bash
+export ACS_CONNECTION_STRING=endpoint=https://x.communication.azure.com/;accesskey=abc123
+```
+
+ends the command at the `;`, so the variable holds only the endpoint and
+`accesskey=abc123` is run as a separate command. Quote it:
+
+```bash
+export ACS_CONNECTION_STRING='endpoint=https://x.communication.azure.com/;accesskey=abc123'
+```
+
+A `.env` file needs no quoting, which is why it is the less error-prone option.
+
+### `INCONCLUSIVE: could not read the resource GUID`
+
+`probe` could not mint an identity, so it does not know which resource you are
+pointed at and will not guess. The line above it says why — usually the
+connection string above, or a key without `Contributor` on the ACS resource.
+It exits `2`; it does not exit `0` and shrug.
+
+### `CommunicationError Forbidden` when replying to a thread
+
+The user is not a participant of that thread on the ACS resource, which is what
+a replay that skipped participants leaves behind. `doctor` reports it as
+`system-only-threads`. The [post-mortem](https://github.com/Het101/threadvault/blob/main/docs/postmortem-acs-chat-migration.md)
+covers what to do about it.
+
+### `migrate apply` refuses to start
+
+It requires `ACS_EXPECT_RESOURCE`, probes the target, and refuses if the GUID
+differs. That is deliberate: it is the check that stops a replay landing on the
+wrong resource. `migrate rehearse` requires it too, for the same reason.
+
+### Exit codes
+
+`0` clean · `1` findings, or a mismatch · `2` could not run. Safe to gate a
+deploy on.
+
 ## Design rules
 
 These aren't style preferences — each one is a bug that reached production.
@@ -356,6 +417,7 @@ Issues and pull requests welcome. Please don't include real chat content, connec
 
 | | |
 |---|---|
+| [Troubleshooting](#troubleshooting) | The things that have actually gone wrong for people |
 | [CONTRIBUTING.md](https://github.com/Het101/threadvault/blob/main/CONTRIBUTING.md) | How to build it, the rules a PR is held to, and why each one exists |
 | [SECURITY.md](https://github.com/Het101/threadvault/blob/main/SECURITY.md) | How to report a vulnerability, and the guarantees the code is built to keep |
 | [CHANGELOG.md](https://github.com/Het101/threadvault/blob/main/CHANGELOG.md) | What changed, including the breaking bits |
