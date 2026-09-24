@@ -43,3 +43,23 @@ describe('sourceJsonlFile', () => {
     expect(out).toHaveLength(2);
   });
 });
+
+describe('sourceJsonlFile bad paths', () => {
+  it('names the missing file instead of leaking a raw ENOENT', async () => {
+    const run = async () => {
+      for await (const _ of sourceJsonlFile(join(dir, 'not-here.jsonl'))) {
+        /* consume */
+      }
+    };
+    await expect(run()).rejects.toThrow(/extract not found:.*not-here\.jsonl/);
+  });
+
+  it('says so when the path is a directory', async () => {
+    const run = async () => {
+      for await (const _ of sourceJsonlFile(dir)) {
+        /* consume */
+      }
+    };
+    await expect(run()).rejects.toThrow(/not a file:/);
+  });
+});
