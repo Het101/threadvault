@@ -96,5 +96,35 @@ jobs:
           done
           echo "commit messages ok"
 
+      - name: commits must be signed
+        # main rejects unsigned commits, but the rejection arrives at merge time
+        # with no explanation of the cause. The usual cause is a rebase that was
+        # not told to sign — including GitHub's own "Update branch" button, which
+        # rebases server-side and cannot sign as you.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -e
+          if [ -z "$PR" ]; then
+            echo "not a pull request; nothing to check"
+            exit 0
+          fi
+          unsigned=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/commits" \
+            --jq '.[] | select(.commit.verification.verified == false) | .sha[0:8] + "  " + (.commit.message | split("\n")[0])')
+          if [ -n "$unsigned" ]; then
+            echo "::error::unsigned commits in this pull request"
+            echo "$unsigned"
+            echo ""
+            echo "Sign them with:"
+            echo "  git rebase --exec 'git commit --amend --no-edit -S' origin/main"
+            echo "  git push --force-with-lease"
+            echo ""
+            echo "Do not use GitHub's 'Update branch' button: it rebases on the"
+            echo "server and strips signatures. Rebase locally instead."
+            exit 1
+          fi
+          echo "all commits signed"
+
       - name: dependency audit
         run: npm audit --audit-level=high

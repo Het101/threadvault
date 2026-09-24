@@ -31,9 +31,46 @@ npm run build                  # tsup -> dist/
 
 `npm install` runs `git config core.hooksPath .githooks` for you. If you cloned before that existed, run `npm run hooks` once.
 
+## Signing
+
+`main` rejects unsigned commits, so set this up once before your first commit:
+
+```bash
+git config commit.gpgsign true
+git config rebase.gpgsign true     # without this, a rebase unsigns everything
+```
+
+No key yet? SSH signing is the shortest route, reusing the key you already push
+with:
+
+```bash
+git config gpg.format ssh
+git config user.signingkey ~/.ssh/id_ed25519.pub
+```
+
+Then add that same public key to [github.com/settings/keys](https://github.com/settings/keys)
+a second time, as a **signing** key. GitHub treats authentication keys and
+signing keys separately, and adding it once is not enough.
+
+**Do not use GitHub's "Update branch" button**, or `gh pr update-branch`. Both
+rebase on the server, which rewrites your commits without your key and turns a
+verified branch into an unverified one. Rebase locally instead:
+
+```bash
+git fetch origin && git rebase origin/main && git push --force-with-lease
+```
+
+If commits are already unsigned, re-sign them in place:
+
+```bash
+git rebase --exec 'git commit --amend --no-edit -S' origin/main
+```
+
 ## What the hooks do
 
-**pre-commit** blocks a commit that carries a live ACS access key, a database URL with a real password, an npm token, or a `.env` file, then runs lint, typecheck and tests if any TypeScript changed. **commit-msg** requires a [Conventional Commit](https://www.conventionalcommits.org/) subject under 72 characters.
+**pre-commit** blocks a commit that carries a live ACS access key, a database URL with a real password, an npm token, or a `.env` file; refuses if commit signing is not configured; then runs lint, typecheck and tests if any TypeScript changed.
+
+**pre-push** refuses to push an unsigned commit. It catches what pre-commit structurally cannot — rebases, cherry-picks, amends and squashes do not run pre-commit, and an unsigned commit is otherwise only discovered at merge time, after CI has run. **commit-msg** requires a [Conventional Commit](https://www.conventionalcommits.org/) subject under 72 characters.
 
 `--no-verify` exists, but CI runs the same checks, so it only moves the failure later.
 
