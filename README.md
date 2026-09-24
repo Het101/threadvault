@@ -302,6 +302,7 @@ Issues and pull requests welcome. Please don't include real chat content, connec
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to build it, the rules a PR is held to, and why each one exists |
 | [SECURITY.md](SECURITY.md) | How to report a vulnerability, and the guarantees the code is built to keep |
 | [CHANGELOG.md](CHANGELOG.md) | What changed, including the breaking bits |
+| [ROADMAP.md](ROADMAP.md) | Where it is going, and what it will deliberately not do |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | How we behave here |
 
 Threadvault is pre-1.0. The commands and their guarantees are stable; flags may still move, and anything that does will be called out in the changelog.
