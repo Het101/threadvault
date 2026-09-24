@@ -33,7 +33,7 @@ These are the guarantees the codebase is built to keep. A defect in any of them 
 | ACS access keys and database passwords never appear in output | `redactSecrets` in `src/log.ts`, applied to `--json` output too |
 | No ACS write happens against an unintended resource | `ACS_EXPECT_RESOURCE` is required for any write, and the target is probed and compared first |
 | No write happens by accident | Every writing command is a dry run until `--commit` |
-| `doctor` cannot modify anything | Its Postgres session is opened `READ ONLY` |
+| `doctor` cannot modify your data | Its Postgres session is opened `READ ONLY`. Against ACS it mints and deletes one throwaway identity to learn the resource GUID, and touches no thread, message or participant |
 | Remote database connections are encrypted **and** verified | `sslFor` in `src/db/pg.ts`; `PG_SSL_NO_VERIFY` exists but is not the default |
 | Secrets do not enter the git history | `.githooks/pre-commit` blocks keys, live database URLs, and `.env` files |
 

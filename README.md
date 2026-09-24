@@ -39,7 +39,7 @@ Mirror once and ACS becomes a cache. Every message lands in **your** database un
 
 ## Install
 
-Nothing to install — `doctor` is read-only, so it is safe to point at a resource and see what it says:
+Nothing to install — `doctor` never reads or changes a message, so it is safe to point at a resource and see what it says:
 
 ```bash
 npx threadvault doctor
@@ -78,15 +78,17 @@ That's it. ACS is now disposable.
 | Command | What it does | Writes? |
 |---|---|---|
 | `probe` | Mints one throwaway identity to discover the resource GUID. Prints host + GUID, never the key. | No |
-| `doctor` | Audits ACS + your database for the five failure modes below. | No — read-only |
+| `doctor` | Audits ACS + your database for the five failure modes below. | Not your data. Mints and deletes one throwaway identity\* |
 | `mirror backfill` | Copies threads, participants, and messages into Postgres. | Only with `--commit` |
 | `migrate extract` | Exports ACS chat history to a portable JSONL file. | No — read-only |
 | `migrate plan` | Inspects a dump and flags every gap before you replay. | No — read-only |
 | `migrate rehearse` | Writes one synthetic thread, asserts four durability goals, deletes it. | Yes (target resource) |
 | `migrate apply` | Replays a dump onto a new ACS resource. Resumable. | Only with `--commit` |
-| `migrate verify` | Reads the replayed estate back and proves it matches the source. | No — read-only |
+| `migrate verify` | Reads the replayed estate back and proves it matches the source. | Not your data. Mints and deletes one reader unless `--reader-acs-id` is given\* |
 
 **Every write is a dry run until you pass `--commit`.** The dry run walks the entire source and reports exactly what the real run would do — it never opens a write path.
+
+\* ACS offers no way to ask which resource a connection string belongs to. The only way to find out is to mint an identity and read the GUID out of it, so `probe`, `doctor` and `verify` create one and delete it immediately. Nothing else is touched: no thread, message or participant is created, changed or removed, and no message is ever read. `doctor --no-acs` does not contact ACS at all.
 
 ## The five failure modes `doctor` catches
 
