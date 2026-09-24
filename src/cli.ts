@@ -45,18 +45,25 @@ program
     }
     const r = await probeResource(cs);
     log(`${(r.host || '-').padEnd(68)}  ${(r.guid || '-').padEnd(38)}  ${r.error ? r.error : 'ok'}`);
-    const expect = acsExpectResource();
-    if (!expect) {
-      log(`note: ACS_EXPECT_RESOURCE unset. Target resource GUID is ${r.guid ?? '?'}`);
-      if (r.guid) log(`      export ACS_EXPECT_RESOURCE=${r.guid}`);
-    } else if (r.guid && r.guid === expect) {
-      log('ok: connection string matches ACS_EXPECT_RESOURCE');
-    } else if (isKnownGuid(r.guid)) {
-      logError(`WARNING: connection string is ${r.guid}, expected ${expect}`);
-      process.exit(1);
-    } else {
+
+    // Whether the probe worked is decided before anything is compared. This
+    // used to be the last branch, so a failed probe with ACS_EXPECT_RESOURCE
+    // unset printed "Target resource GUID is ?" and exited 0 — reporting
+    // success for a command that had learned nothing.
+    if (!isKnownGuid(r.guid)) {
       logError('INCONCLUSIVE: could not read the resource GUID — fix the error above before trusting any of this');
       process.exit(2);
+    }
+
+    const expect = acsExpectResource();
+    if (!expect) {
+      log(`note: ACS_EXPECT_RESOURCE unset. Target resource GUID is ${r.guid}`);
+      log(`      export ACS_EXPECT_RESOURCE=${r.guid}`);
+    } else if (r.guid === expect) {
+      log('ok: connection string matches ACS_EXPECT_RESOURCE');
+    } else {
+      logError(`WARNING: connection string is ${r.guid}, expected ${expect}`);
+      process.exit(1);
     }
   });
 

@@ -90,3 +90,23 @@ describe('resolveOriginalSenderUserId', () => {
     ).toBeNull();
   });
 });
+
+describe('connectionStringProblem', () => {
+  it('names the shell-quoting trap, which is what actually happens', async () => {
+    const { connectionStringProblem } = await import('../src/acs/client.ts');
+    // An unquoted `export X=endpoint=...;accesskey=...` in bash ends the
+    // command at the ';', leaving exactly this.
+    const truncated = 'endpoint=https://example.communication.azure.com/';
+    expect(connectionStringProblem(truncated)).toMatch(/accesskey/);
+    expect(connectionStringProblem(truncated)).toMatch(/quote it/);
+  });
+
+  it('accepts a complete connection string and rejects an empty one', async () => {
+    const { connectionStringProblem } = await import('../src/acs/client.ts');
+    expect(
+      connectionStringProblem('endpoint=https://example.communication.azure.com/;accesskey=abc'),
+    ).toBeNull();
+    expect(connectionStringProblem('')).toMatch(/empty/);
+    expect(connectionStringProblem('accesskey=abc')).toMatch(/endpoint/);
+  });
+});

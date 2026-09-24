@@ -44,6 +44,28 @@ export function createAcs(connectionString: string): AcsSession {
   return { identity, endpoint, chatFor };
 }
 
+/**
+ * Why this connection string cannot work, or null if it looks usable.
+ *
+ * The Azure SDK answers "Invalid connection string <the string>", which is
+ * true and tells you nothing. The overwhelmingly common cause is a shell:
+ * `export ACS_CONNECTION_STRING=endpoint=...;accesskey=...` without quotes
+ * ends the command at the `;`, so the variable holds the endpoint alone and
+ * the key silently vanishes.
+ */
+export function connectionStringProblem(connectionString: string): string | null {
+  const cs = connectionString.trim();
+  if (!cs) return 'the connection string is empty';
+  if (!/endpoint=/i.test(cs)) return 'no endpoint= in the connection string';
+  if (!/accesskey=/i.test(cs)) {
+    return (
+      'no accesskey= in the connection string. If you exported it in a shell, quote it: ' +
+      "an unquoted ';' ends the command and drops everything after it"
+    );
+  }
+  return null;
+}
+
 export type ProbeResult = {
   host: string;
   guid: string | null;
@@ -55,6 +77,17 @@ export type ProbeResult = {
  * Prints/returns host + GUID only — never the access key.
  */
 export async function probeResource(connectionString: string): Promise<ProbeResult> {
+  const problem = connectionStringProblem(connectionString);
+  if (problem) {
+    let host = '-';
+    try {
+      host = parseEndpointHost(connectionString);
+    } catch {
+      /* there is no endpoint to report either */
+    }
+    return { host, guid: null, error: problem };
+  }
+
   const host = parseEndpointHost(connectionString);
   try {
     const identity = new CommunicationIdentityClient(connectionString);
