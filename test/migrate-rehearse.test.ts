@@ -1,11 +1,15 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { migrateRehearse } from '../src/migrate/rehearse.ts';
 
+let probedGuid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 let mockParticipants: any[] = [];
 let mockMessageResponse: any = {};
 
 vi.mock('../src/acs/client.ts', () => {
   return {
+    probeResource: vi.fn().mockImplementation(() =>
+      Promise.resolve({ host: 'mock.communication.azure.com', guid: probedGuid }),
+    ),
     createAcs: vi.fn().mockImplementation(() => {
       return {
         chatFor: vi.fn().mockImplementation(async (identity: string) => {
@@ -60,6 +64,7 @@ describe('migrateRehearse', () => {
     // Should not throw
     await migrateRehearse({
       connectionString: 'endpoint=https://mock.example.com;accesskey=mock',
+      targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
       systemAcsId: 'sys',
       nonSystemAcsId: 'non_sys',
       nonSystemOurUserId: 'u-user'
@@ -72,6 +77,7 @@ describe('migrateRehearse', () => {
     ]; // non_sys is skipped
     await expect(migrateRehearse({
       connectionString: 'endpoint=https://mock.example.com;accesskey=mock',
+      targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
       systemAcsId: 'sys',
       nonSystemAcsId: 'non_sys',
       nonSystemOurUserId: 'u-user'
@@ -88,6 +94,7 @@ describe('migrateRehearse', () => {
     mockMessageResponse.metadata.originalCreatedOn = '2024-01-01T12:00:00.000Z'; // different from originalTime in rehearse
     await expect(migrateRehearse({
       connectionString: 'endpoint=https://mock.example.com;accesskey=mock',
+      targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
       systemAcsId: 'sys',
       nonSystemAcsId: 'non_sys',
       nonSystemOurUserId: 'u-user'
@@ -98,9 +105,45 @@ describe('migrateRehearse', () => {
     mockMessageResponse.metadata.originalSenderUserId = 'wrong-user';
     await expect(migrateRehearse({
       connectionString: 'endpoint=https://mock.example.com;accesskey=mock',
+      targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
       systemAcsId: 'sys',
       nonSystemAcsId: 'non_sys',
       nonSystemOurUserId: 'u-user'
     })).rejects.toThrow(/Assertion 2/);
+  });
+});
+
+describe('migrateRehearse resource guard', () => {
+  beforeEach(() => {
+    probedGuid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    mockParticipants = [{ id: { communicationUserId: 'sys' } }, { id: { communicationUserId: 'non_sys' } }];
+  });
+
+  it('refuses to write when the target is not the resource we expect', async () => {
+    // rehearse creates a thread, sends messages and deletes a thread. Doing
+    // that against the wrong resource is the accident the guard exists for.
+    probedGuid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+    await expect(
+      migrateRehearse({
+        connectionString: 'endpoint=https://mock.communication.azure.com/;accesskey=mock',
+        targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        systemAcsId: 'sys',
+        nonSystemAcsId: 'non_sys',
+        nonSystemOurUserId: 'u-user',
+      }),
+    ).rejects.toThrow(/Target GUID mismatch/);
+  });
+
+  it('refuses when the target cannot be probed at all', async () => {
+    probedGuid = null as unknown as string;
+    await expect(
+      migrateRehearse({
+        connectionString: 'endpoint=https://mock.communication.azure.com/;accesskey=mock',
+        targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        systemAcsId: 'sys',
+        nonSystemAcsId: 'non_sys',
+        nonSystemOurUserId: 'u-user',
+      }),
+    ).rejects.toThrow(/Could not probe target ACS/);
   });
 });
