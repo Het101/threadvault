@@ -82,7 +82,19 @@ jobs:
       # would actively break it — setup-node writes it into .npmrc and npm
       # would try that empty credential instead of falling back to OIDC.
       - name: stage the release on npm
-        run: npm stage publish --provenance --access public
+        id: stage
+        run: |
+          set -o pipefail
+          npm stage publish --provenance --access public 2>&1 | tee /tmp/stage.log
+          # npm prints: "+ threadvault@0.2.2 (staged with id <uuid>)". Approving
+          # needs that id, and hunting for it is the one manual step between a
+          # green build and a published package — so carry it forward rather
+          # than making a human go and look it up.
+          id=$(grep -oE 'staged with id [0-9a-f-]{36}' /tmp/stage.log | head -1 | sed 's/.* //')
+          if [ -z "$id" ]; then
+            echo "::warning::could not read the stage id from npm's output; the issue will say how to look it up"
+          fi
+          echo "stage_id=$id" >> "$GITHUB_OUTPUT"
 
       # Drafted, not published — the same bargain as the npm stage above. CI
       # prepares both, a human publishes both. Otherwise a rejected npm stage
@@ -119,25 +131,37 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           OWNER: ${{ github.repository_owner }}
+          # Through env, never interpolated into the script body.
+          STAGE_ID: ${{ steps.stage.outputs.stage_id }}
         run: |
           set -e
+          # Fall back to the lookup command only if npm's output changed shape.
+          sid="${STAGE_ID:-<stage-id>}"
           {
             echo "\`$GITHUB_REF_NAME\` passed every check. It is **staged on npm** and the"
             echo "GitHub release is **drafted**. Neither is public until you approve them."
             echo ""
+            if [ -n "$STAGE_ID" ]; then
+              echo "Stage id: \`$STAGE_ID\`"
+            else
+              echo "Stage id: run \`npm stage list threadvault\` — it could not be read from the build log."
+            fi
+            echo ""
             echo "## Approve"
             echo ""
             echo '```bash'
-            echo "npm stage list threadvault      # find the stage id"
-            echo "npm stage view <stage-id>       # confirm it is the right build"
-            echo "npm stage approve <stage-id>    # your 2FA — passkey opens a browser"
+            echo "npm stage view $sid       # confirm it is the right build"
+            echo "npm stage approve $sid    # your 2FA — a passkey opens a browser"
             echo "gh release edit $GITHUB_REF_NAME --draft=false --latest"
             echo '```'
+            echo ""
+            echo "On Windows PowerShell use \`npm.cmd\`, and run it in your own terminal so"
+            echo "the passkey URL is clickable."
             echo ""
             echo "## Or discard"
             echo ""
             echo '```bash'
-            echo "npm stage reject <stage-id>"
+            echo "npm stage reject $sid"
             echo "gh release delete $GITHUB_REF_NAME"
             echo '```'
             echo ""
@@ -156,7 +180,10 @@ jobs:
             --assignee "$OWNER"
 
       - name: how to release it
+        env:
+          STAGE_ID: ${{ steps.stage.outputs.stage_id }}
         run: |
+          sid="${STAGE_ID:-<stage-id>}"
           {
             echo "### Staged, not yet released"
             echo ""
@@ -164,11 +191,10 @@ jobs:
             echo "and the GitHub release is drafted. Neither is public until you say so."
             echo ""
             echo '```bash'
-            echo "npm stage list threadvault"
-            echo "npm stage view <stage-id>      # confirm it is the right build"
-            echo "npm stage approve <stage-id>   # your 2FA"
+            echo "npm stage view $sid       # confirm it is the right build"
+            echo "npm stage approve $sid    # your 2FA"
             echo "gh release edit $GITHUB_REF_NAME --draft=false --latest"
             echo '```'
             echo ""
-            echo "To discard instead: \`npm stage reject <stage-id>\` and \`gh release delete $GITHUB_REF_NAME\`"
+            echo "To discard instead: \`npm stage reject $sid\` and \`gh release delete $GITHUB_REF_NAME\`"
           } >> "$GITHUB_STEP_SUMMARY"
