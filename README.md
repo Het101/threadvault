@@ -245,18 +245,66 @@ Read-only, and never reads a message body: every check runs on counts and metada
 
 ## Configuration
 
-| Variable | Required for | Purpose |
+### Setting the connection string
+
+```bash
+export ACS_CONNECTION_STRING='endpoint=https://<resource>.communication.azure.com/;accesskey=<key>'
+```
+
+**The quotes are not optional.** Without them your shell ends the command at the
+`;`, the variable holds only the endpoint, and the key disappears with no
+warning — you get `Invalid connection string` and no clue why. It is the most
+common way to lose an hour with this tool, so `probe` now detects it and says
+so. On Windows PowerShell:
+
+```powershell
+$env:ACS_CONNECTION_STRING = 'endpoint=https://<resource>.communication.azure.com/;accesskey=<key>'
+```
+
+A `.env` file in the working directory is read automatically and needs no
+quoting. Copy [`.env.example`](https://github.com/Het101/threadvault/blob/main/.env.example) to `.env` to start.
+
+### What each command needs
+
+| Command | `ACS_CONNECTION_STRING` | `ACS_EXPECT_RESOURCE` | `DATABASE_URL` | Also |
+|---|---|---|---|---|
+| `probe` | **required** | optional — compared if set | — | — |
+| `doctor` | required unless `--no-acs` | required with `--no-acs` | optional; without it, only what ACS lists | `threadvault.yml` to read your own tables |
+| `mirror backfill` | required unless `--from-jsonl` | — | required with `--commit` | `--reader-acs-id`, or `--to-jsonl` to skip Postgres |
+| `migrate extract` | **required** | — | — | `--reader-acs-id`, `--out` |
+| `migrate plan` | — | optional — enables the stale-identity count | required with `--from-mirror` | `--from-jsonl` or `--from-mirror` |
+| `migrate rehearse` | **required** | **required** — it writes | — | `--system-acs-id`, `--non-system-acs-id`, `--non-system-our-user-id` |
+| `migrate apply` | **required** | **required** — it writes | required with `--from-mirror` | `--state`, and `--commit` to write |
+| `migrate verify` | **required** (the *new* resource) | — | required with `--from-mirror` | `--state` |
+
+`migrate plan` needs nothing at all to inspect a JSONL dump, which is why it is
+the safe first thing to run on an extract from someone else's machine.
+
+### Every variable
+
+| Variable | Default | Purpose |
 |---|---|---|
-| `ACS_CONNECTION_STRING` | everything touching ACS | The resource to read or write. `ACS_NEW_CONNECTION_STRING` and `AZURE_COMMUNICATION_CONNECTION_STRING` also work. |
-| `ACS_EXPECT_RESOURCE` | **any ACS write** | The resource GUID you intend to write to. Threadvault refuses if the probed GUID differs. Get it from `probe`. |
-| `DATABASE_URL` | Postgres commands | Standard Postgres URL. |
-| `ACS_RETRY_ATTEMPTS` | optional (8) | Retries through ACS throttling. `retry-after` is honoured when ACS sends it. Permission and not-found errors fail immediately — backing off on a `403` only wastes time. |
-| `PG_SSL_NO_VERIFY` | optional (false) | Escape hatch for a private CA. Leave it off. |
-| `PG_HOST_OVERRIDE` | optional | `host=address` pairs, comma-separated, for pinned DNS. |
+| `ACS_CONNECTION_STRING` | — | The resource to read or write. `ACS_NEW_CONNECTION_STRING` and `AZURE_COMMUNICATION_CONNECTION_STRING` are also accepted, in that order of preference. |
+| `ACS_EXPECT_RESOURCE` | — | The resource GUID you intend to write to. Every ACS write refuses without it, probes the target, and refuses again if the GUID differs. Get it from `probe`. |
+| `DATABASE_URL` | — | Standard Postgres URL. `doctor` opens it read-only. |
+| `ACS_RETRY_ATTEMPTS` | `8` | Retries through ACS throttling; `retry-after` is honoured when ACS sends it. Permission and not-found errors fail at once rather than backing off through a schedule that cannot succeed. |
+| `PG_SSL_NO_VERIFY` | `false` | Skips TLS certificate verification for remote Postgres. An escape hatch for a private CA. Leave it off — that connection carries credentials and message bodies. |
+| `PG_HOST_OVERRIDE` | — | `host=address` pairs, comma-separated, for pinned DNS. |
+| `PG_CONNECT_ATTEMPTS` | `5` | Connection retries, with backoff. |
 
-`migrate apply` takes `--state <path>` for the replay ledger. It is not required, but committing without it warns — and it should.
+Threadvault never prints the value of any of these. Access keys and database
+passwords are stripped from every log line, error message and `--json` payload.
 
-See [`.env.example`](https://github.com/Het101/threadvault/blob/main/.env.example).
+### Flags worth knowing
+
+- `--commit` — every writing command is a dry run without it.
+- `--state <path>` on `migrate apply` and `migrate verify` — the replay ledger.
+  Not required, but committing without it warns, and it should.
+- `--concurrency <n>` on `migrate extract` and `mirror backfill` — threads walked
+  at once, default 4.
+- `--json` on `doctor`, `migrate plan` and `migrate verify` — same data, machine
+  readable, same redaction.
+
 
 ### Reading your own tables
 
