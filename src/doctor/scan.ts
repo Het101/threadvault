@@ -1,6 +1,7 @@
-import { asCommunicationUserId, belongsToResource } from '../acs/identity.ts';
+import { belongsToResource } from '../acs/identity.ts';
 import { createAcs } from '../acs/client.ts';
 import { pool } from '../acs/pool.ts';
+import { listMessageMeta, listParticipantIds } from '../acs/read.ts';
 import { withRetry } from '../acs/retry.ts';
 import { logError } from '../log.ts';
 import type { DoctorInputs } from './checks.ts';
@@ -25,40 +26,6 @@ function readersFor(
   );
   const rest = onResource.filter((id) => id !== system?.acsId);
   return system?.acsId ? [system.acsId, ...rest] : rest;
-}
-
-async function listParticipantIds(tc: {
-  listParticipants: () => AsyncIterable<{ id?: unknown }>;
-}): Promise<string[]> {
-  const ids: string[] = [];
-  for await (const p of tc.listParticipants()) {
-    const id = asCommunicationUserId(p.id);
-    if (id) ids.push(id);
-  }
-  return ids;
-}
-
-async function listMessageMeta(
-  tc: {
-    listMessages: () => AsyncIterable<{
-      id: string;
-      sender?: unknown;
-      metadata?: Record<string, string> | null;
-    }>;
-  },
-  threadId: string,
-): Promise<DoctorInputs['acsMessages']> {
-  const out: DoctorInputs['acsMessages'] = [];
-  for await (const m of tc.listMessages()) {
-    // Discard m.content at the SDK boundary. Do not read it.
-    out.push({
-      threadId,
-      messageId: m.id,
-      senderAcsId: asCommunicationUserId(m.sender),
-      metadata: m.metadata ?? null,
-    });
-  }
-  return out;
 }
 
 /**

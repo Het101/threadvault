@@ -68,7 +68,8 @@ That's it. ACS is now disposable.
 | `migrate extract` | Exports ACS chat history to a portable JSONL file. | No — read-only |
 | `migrate plan` | Inspects a dump and flags every gap before you replay. | No — read-only |
 | `migrate rehearse` | Writes one synthetic thread, asserts four durability goals, deletes it. | Yes (target resource) |
-| `migrate apply` | Replays a dump onto a new ACS resource. | Only with `--commit` |
+| `migrate apply` | Replays a dump onto a new ACS resource. Resumable. | Only with `--commit` |
+| `migrate verify` | Reads the replayed estate back and proves it matches the source. | No — read-only |
 
 **Every write is a dry run until you pass `--commit`.** The dry run walks the entire source and reports exactly what the real run would do — it never opens a write path.
 
@@ -185,6 +186,38 @@ Run the dry run with the same `--state` first and it will tell you exactly how m
 It is append-only on purpose: rewriting a whole state file after every thread is O(n) per thread and O(n²) over an estate, and a crash that truncates the last line costs one record instead of the whole ledger.
 
 Back the file up, and use it to update your own user rows once the replay lands.
+
+### Prove it worked
+
+`apply` reports what it sent. `verify` reports what actually arrived, which is the only number worth trusting after a migration:
+
+```bash
+export ACS_CONNECTION_STRING='…'   # the NEW resource
+threadvault migrate verify --from-jsonl dump.jsonl --state replay.jsonl
+```
+
+```console
+threadvault migrate verify
+
+  threads in source   7200
+  verified clean      7199
+
+  never-replayed       ok
+  incomplete           ok
+  unreadable           ok
+  message-count        1
+  participant-count    ok
+  unattributed         ok
+  untimed              ok
+
+  - (message-count) thread 19:…: source has 14 message(s), target has 13
+```
+
+It walks the replayed threads and compares message counts, participant counts, and whether every replayed message still carries a recoverable author and original timestamp. ACS control messages are excluded — the resource emits those itself, and counting them would make a correct replay look wrong.
+
+Read-only, and never reads a message body: every check runs on counts and metadata. Exit code `0` if the estate matches, `1` if it does not, so it can gate a cutover.
+
+**The full migration is then:** `extract` → `plan` → `rehearse` → `apply` → `verify`. Nothing in that chain asks you to trust it.
 
 ## Safety model
 

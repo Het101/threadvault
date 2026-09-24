@@ -24,6 +24,7 @@ import { sourcePostgres } from './mirror/source-postgres.ts';
 import type { Rec } from './mirror/types.ts';
 import { applySchema } from './db/schema.ts';
 import { ReplayLedger } from './migrate/state.ts';
+import { migrateVerify, formatVerify, verifyExitCode } from './migrate/verify.ts';
 import { log, logError, logJson } from './log.ts';
 
 const program = new Command();
@@ -400,6 +401,73 @@ migrate
       }
     }
   });
+
+migrate
+  .command('verify')
+  .description('Read a replayed estate back and prove it matches the source. Read-only.')
+  .option('--from-jsonl <path>', 'the JSONL extract that was replayed')
+  .option('--from-mirror', 'the Postgres mirror that was replayed')
+  .requiredOption('--state <path>', 'the replay ledger written by migrate apply')
+  .option('--reader-acs-id <id>', 'identity to read the target as')
+  .option('--concurrency <n>', 'threads verified at once', '4')
+  .option('--json', 'print the report as JSON')
+  .action(
+    async (opts: {
+      fromJsonl?: string;
+      fromMirror?: boolean;
+      state: string;
+      readerAcsId?: string;
+      concurrency?: string;
+      json?: boolean;
+    }) => {
+      let db: PgClient | undefined;
+      let ledger: ReplayLedger | undefined;
+      try {
+        const cs = acsConnectionString();
+        if (!cs) {
+          logError('ACS_CONNECTION_STRING is not set (point it at the TARGET resource)');
+          process.exit(2);
+        }
+
+        let sourceStream: AsyncIterable<Rec>;
+        if (opts.fromJsonl) {
+          sourceStream = sourceJsonlFile(opts.fromJsonl);
+        } else if (opts.fromMirror) {
+          const dbUrl = process.env.DATABASE_URL;
+          if (!dbUrl) {
+            logError('DATABASE_URL is not set for --from-mirror');
+            process.exit(2);
+          }
+          db = await connectReadOnly(dbUrl);
+          sourceStream = sourcePostgres(db);
+        } else {
+          logError('Must specify --from-jsonl or --from-mirror');
+          process.exit(2);
+        }
+
+        ledger = ReplayLedger.open(opts.state);
+        const report = await migrateVerify({
+          connectionString: cs,
+          sourceStream,
+          ledger,
+          readerAcsId: opts.readerAcsId,
+          concurrency: Math.max(1, Number(opts.concurrency ?? 4)),
+        });
+
+        if (opts.json) logJson(report);
+        else log(formatVerify(report));
+        process.exit(verifyExitCode(report));
+      } catch (e) {
+        logError(e instanceof Error ? e.message : String(e));
+        process.exit(2);
+      } finally {
+        ledger?.close();
+        if (db) {
+          await db.end().catch(() => undefined);
+        }
+      }
+    },
+  );
 
 program.parseAsync(process.argv).catch((e) => {
   logError(e instanceof Error ? e.message : String(e));
