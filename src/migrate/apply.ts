@@ -3,6 +3,7 @@ import { isKnownGuid, resolveOriginalSenderUserId } from '../acs/identity.ts';
 import { withRetry } from '../acs/retry.ts';
 import { log, logError } from '../log.ts';
 import { isReplayable, type Rec } from '../mirror/types.ts';
+import { ReplayLedger } from './state.ts';
 
 type BufferedParticipant = {
   id: { communicationUserId: string };
@@ -24,15 +25,12 @@ export type ApplyOpts = {
   /** Writes nothing unless true. Default is dry-run. */
   commit?: boolean;
   /**
-   * old ACS id -> identity on the target resource. Read before minting and
-   * mutated in place so the caller can persist it, and a re-run reuses the same
-   * identities instead of minting a second orphaned set.
-   *
-   * Without it the replay mints a throwaway identity for every participant,
-   * which means no real user - not even the system user - can open the threads
-   * that were just replayed. Losing the map loses the estate.
+   * Record of what this replay has already done — minted identities and
+   * per-thread progress. Pass a persisted one to make the replay resumable;
+   * omit it and an interrupted run has no way to avoid duplicating everything
+   * it already wrote.
    */
-  identityMap?: Map<string, string>;
+  ledger?: ReplayLedger;
 };
 
 export type ApplyStats = {
@@ -42,6 +40,10 @@ export type ApplyStats = {
   identitiesMinted: number;
   /** ACS control messages (participantAdded, topicUpdated, ...) not replayed. */
   skipped: number;
+  /** Threads a previous run already finished. */
+  threadsResumed: number;
+  /** Messages a previous run already delivered. */
+  messagesAlreadySent: number;
 };
 
 function replayMetadata(rec: Extract<Rec, { kind: 'message' }>): Record<string, string> {
@@ -60,6 +62,10 @@ function replayMetadata(rec: Extract<Rec, { kind: 'message' }>): Record<string, 
  *
  * Always restores participants. Always writes originalSenderUserId /
  * originalCreatedOn onto replayed messages. Dry-run unless `commit`.
+ *
+ * Resumable when given a persisted ledger: finished threads are skipped
+ * entirely and a half-delivered thread continues from the message it reached,
+ * so an interrupted replay can be re-run without duplicating the estate.
  */
 export async function migrateApply(opts: ApplyOpts): Promise<ApplyStats> {
   const probe = await probeResource(opts.connectionString);
@@ -78,21 +84,32 @@ export async function migrateApply(opts: ApplyOpts): Promise<ApplyStats> {
     messages: 0,
     identitiesMinted: 0,
     skipped: 0,
+    threadsResumed: 0,
+    messagesAlreadySent: 0,
   };
+
+  const ledger = opts.ledger ?? ReplayLedger.ephemeral();
 
   if (!opts.commit) {
     for await (const rec of opts.sourceStream) {
-      if (rec.kind === 'thread') stats.threads++;
-      else if (rec.kind === 'participant') stats.participants++;
-      else if (rec.kind === 'message') {
-        if (isReplayable(rec)) stats.messages++;
+      if (rec.kind === 'thread') {
+        if (ledger.isDone(rec.legacyThreadId)) stats.threadsResumed++;
+        else stats.threads++;
+      } else if (rec.kind === 'participant') {
+        if (!ledger.isDone(rec.legacyThreadId)) stats.participants++;
+      } else if (rec.kind === 'message') {
+        if (ledger.isDone(rec.legacyThreadId)) stats.messagesAlreadySent++;
+        else if (isReplayable(rec)) stats.messages++;
         else stats.skipped++;
       }
     }
     const skipNote = stats.skipped ? `, skipping ${stats.skipped} ACS control message(s)` : '';
+    const resumeNote = stats.threadsResumed
+      ? ` Skipping ${stats.threadsResumed} thread(s) a previous run already finished.`
+      : '';
     log(
       `Dry run: would replay ${stats.threads} thread(s), ${stats.participants} participant(s), ` +
-        `${stats.messages} message(s)${skipNote}. Pass --commit to write.`,
+        `${stats.messages} message(s)${skipNote}.${resumeNote} Pass --commit to write.`,
     );
     return stats;
   }
@@ -102,14 +119,11 @@ export async function migrateApply(opts: ApplyOpts): Promise<ApplyStats> {
   const migratorId = migrator.communicationUserId;
   const migratorChat = await acs.chatFor(migratorId);
 
-  const targetIdCache = new Map<string, string>();
-  const identityCache = opts.identityMap ?? new Map<string, string>();
-
   const getOrMintIdentity = async (oldAcsId: string): Promise<string> => {
-    const hit = identityCache.get(oldAcsId);
+    const hit = ledger.identities.get(oldAcsId);
     if (hit) return hit;
     const u = await withRetry(`createUser ${oldAcsId}`, () => acs.identity.createUser());
-    identityCache.set(oldAcsId, u.communicationUserId);
+    ledger.recordIdentity(oldAcsId, u.communicationUserId);
     stats.identitiesMinted++;
     return u.communicationUserId;
   };
@@ -119,29 +133,44 @@ export async function migrateApply(opts: ApplyOpts): Promise<ApplyStats> {
   let currentLegacyThreadId: string | null = null;
 
   const flushThread = async () => {
-    if (!currentLegacyThreadId) return;
-    const targetThreadId = targetIdCache.get(currentLegacyThreadId);
-    if (!targetThreadId) {
+    const legacyId = currentLegacyThreadId;
+    const reset = () => {
       bufferParticipants = [];
       bufferMessages = [];
       currentLegacyThreadId = null;
-      return;
-    }
+    };
+    if (!legacyId) return reset();
 
-    log(`Flushing thread ${currentLegacyThreadId} to target ${targetThreadId}`);
+    const progress = ledger.threads.get(legacyId);
+    if (!progress) return reset();
+
+    const targetThreadId = progress.target;
+    // Messages this thread already delivered on an earlier run. Sending them
+    // again is the duplicate-estate failure the ledger exists to prevent.
+    const alreadySent = progress.messages;
+
+    log(
+      `Flushing thread ${legacyId} to target ${targetThreadId}` +
+        (alreadySent ? ` (resuming after ${alreadySent} message(s))` : ''),
+    );
     const tc = migratorChat.getChatThreadClient(targetThreadId);
 
-    const batchSize = 50;
-    for (let i = 0; i < bufferParticipants.length; i += batchSize) {
-      const pBatch = bufferParticipants.slice(i, i + batchSize);
-      await withRetry(`addParticipants ${targetThreadId}`, () =>
-        tc.addParticipants({ participants: pBatch }),
-      );
-      stats.participants += pBatch.length;
+    // Participants are added before any message, so a thread that has already
+    // delivered one has its participants in place.
+    if (alreadySent === 0) {
+      const batchSize = 50;
+      for (let i = 0; i < bufferParticipants.length; i += batchSize) {
+        const pBatch = bufferParticipants.slice(i, i + batchSize);
+        await withRetry(`addParticipants ${targetThreadId}`, () =>
+          tc.addParticipants({ participants: pBatch }),
+        );
+        stats.participants += pBatch.length;
+      }
     }
 
     const onThread = new Set(bufferParticipants.map((p) => p.id.communicationUserId));
-    for (const msg of bufferMessages) {
+    let delivered = alreadySent;
+    for (const msg of bufferMessages.slice(alreadySent)) {
       // Send as the real sender where we have one on this thread, so the ACS
       // sender and the metadata agree. Sending everything as the migrator is
       // exactly the misattribution `doctor` check 3 exists to catch.
@@ -155,12 +184,13 @@ export async function migrateApply(opts: ApplyOpts): Promise<ApplyStats> {
           { senderDisplayName: msg.senderDisplayName, metadata: msg.metadata },
         ),
       );
+      delivered++;
       stats.messages++;
+      ledger.recordThread(legacyId, { target: targetThreadId, messages: delivered, done: false });
     }
 
-    bufferParticipants = [];
-    bufferMessages = [];
-    currentLegacyThreadId = null;
+    ledger.recordThread(legacyId, { target: targetThreadId, messages: delivered, done: true });
+    reset();
   };
 
   log(`Starting replay as migrator ${migratorId}`);
@@ -169,19 +199,40 @@ export async function migrateApply(opts: ApplyOpts): Promise<ApplyStats> {
     for await (const rec of opts.sourceStream) {
       if (rec.kind === 'thread') {
         await flushThread();
+        if (ledger.isDone(rec.legacyThreadId)) {
+          // Already replayed end to end. Do not create it again.
+          stats.threadsResumed++;
+          log(`Skipping thread ${rec.legacyThreadId} — already replayed`);
+          continue;
+        }
         currentLegacyThreadId = rec.legacyThreadId;
         log(`Replaying thread ${rec.legacyThreadId}`);
+
+        const resumed = ledger.threads.get(rec.legacyThreadId);
+        if (resumed) {
+          // Created by an earlier run that died before finishing it. Reuse the
+          // thread rather than stranding it and making a second one.
+          stats.threads++;
+          continue;
+        }
+
         const res = await withRetry(`createThread ${rec.legacyThreadId}`, () =>
           migratorChat.createChatThread({ topic: rec.topic }),
         );
         if (res.chatThread?.id) {
-          targetIdCache.set(rec.legacyThreadId, res.chatThread.id);
+          ledger.recordThread(rec.legacyThreadId, {
+            target: res.chatThread.id,
+            messages: 0,
+            done: false,
+          });
           stats.threads++;
         } else {
           logError(`Failed to create target thread for ${rec.legacyThreadId}`);
+          currentLegacyThreadId = null;
         }
       } else if (rec.kind === 'participant') {
-        if (!currentLegacyThreadId && targetIdCache.has(rec.legacyThreadId)) {
+        if (ledger.isDone(rec.legacyThreadId)) continue;
+        if (!currentLegacyThreadId && ledger.threads.has(rec.legacyThreadId)) {
           currentLegacyThreadId = rec.legacyThreadId;
         }
         const newAcsId = await getOrMintIdentity(rec.acsId);
@@ -190,7 +241,11 @@ export async function migrateApply(opts: ApplyOpts): Promise<ApplyStats> {
           displayName: rec.displayName || undefined,
         });
       } else if (rec.kind === 'message') {
-        if (!currentLegacyThreadId && targetIdCache.has(rec.legacyThreadId)) {
+        if (ledger.isDone(rec.legacyThreadId)) {
+          stats.messagesAlreadySent++;
+          continue;
+        }
+        if (!currentLegacyThreadId && ledger.threads.has(rec.legacyThreadId)) {
           currentLegacyThreadId = rec.legacyThreadId;
         }
         if (!isReplayable(rec)) {
@@ -201,7 +256,7 @@ export async function migrateApply(opts: ApplyOpts): Promise<ApplyStats> {
           content: rec.content ?? '',
           senderDisplayName: rec.senderDisplayName || undefined,
           metadata: replayMetadata(rec),
-          senderAcsId: rec.senderAcsId ? identityCache.get(rec.senderAcsId) ?? null : null,
+          senderAcsId: rec.senderAcsId ? ledger.identities.get(rec.senderAcsId) ?? null : null,
         });
       }
     }
@@ -209,7 +264,8 @@ export async function migrateApply(opts: ApplyOpts): Promise<ApplyStats> {
     log(
       `Migrate apply completed. Threads: ${stats.threads}, ` +
         `Participants: ${stats.participants}, Messages: ${stats.messages}, ` +
-        `Identities minted: ${stats.identitiesMinted}, Control skipped: ${stats.skipped}`,
+        `Identities minted: ${stats.identitiesMinted}, Control skipped: ${stats.skipped}` +
+        (stats.threadsResumed ? `, Threads already done: ${stats.threadsResumed}` : ''),
     );
     return stats;
   } finally {

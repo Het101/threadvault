@@ -23,7 +23,7 @@ import { sourceJsonlFile } from './mirror/source-jsonl.ts';
 import { sourcePostgres } from './mirror/source-postgres.ts';
 import type { Rec } from './mirror/types.ts';
 import { applySchema } from './db/schema.ts';
-import { readIdentityMap, writeIdentityMap } from './migrate/identity-map.ts';
+import { ReplayLedger } from './migrate/state.ts';
 import { log, logError, logJson } from './log.ts';
 
 const program = new Command();
@@ -283,12 +283,13 @@ migrate
   .option('--from-jsonl <path>', 'path to JSONL extract')
   .option('--from-mirror', 'read from Postgres mirror')
   .option(
-    '--identity-map <path>',
-    'JSON map of old ACS id -> target ACS id. Read before minting, rewritten after. Keep it: without it the replayed threads belong to nobody.',
+    '--state <path>',
+    'replay ledger: minted identities and per-thread progress. Makes the replay resumable and is the only link between replayed threads and the people in them. Keep it.',
   )
   .option('--commit', 'must be passed to write to ACS (otherwise dry-run)')
-  .action(async (opts: { fromJsonl?: string; fromMirror?: boolean; identityMap?: string; commit?: boolean }) => {
+  .action(async (opts: { fromJsonl?: string; fromMirror?: boolean; state?: string; commit?: boolean }) => {
     let db: PgClient | undefined;
+    let ledger: ReplayLedger | undefined;
     try {
       const targetResourceGuid = acsExpectResource();
       if (!targetResourceGuid) {
@@ -318,38 +319,36 @@ migrate
         process.exit(2);
       }
 
-      const identityMap = opts.identityMap ? readIdentityMap(opts.identityMap) : new Map<string, string>();
-      if (opts.identityMap && identityMap.size) {
-        log(`Reusing ${identityMap.size} mapped identit(ies) from ${opts.identityMap}`);
+      ledger = opts.state ? ReplayLedger.open(opts.state) : ReplayLedger.ephemeral();
+      const doneThreads = [...ledger.threads.values()].filter((t) => t.done).length;
+      if (opts.state && (ledger.identities.size || ledger.threads.size)) {
+        log(
+          `Resuming from ${opts.state}: ${ledger.identities.size} identit(ies), ` +
+            `${doneThreads} thread(s) already replayed`,
+        );
       }
-      if (!opts.identityMap && opts.commit) {
+      if (!opts.state && opts.commit) {
         logError(
-          'WARNING: --identity-map is not set. Every participant gets a freshly minted identity ' +
-            'and the old -> new mapping is discarded when this process exits, so no real user will ' +
-            'be able to open the replayed threads.',
+          'WARNING: --state is not set. Minted identities and replay progress are discarded when ' +
+            'this process exits, so no real user will be able to open the replayed threads and an ' +
+            'interrupted run cannot be resumed without duplicating everything it already wrote.',
         );
       }
 
-      try {
-        await migrateApply({
-          connectionString: cs,
-          sourceStream,
-          targetResourceGuid,
-          commit: !!opts.commit,
-          identityMap,
-        });
-      } finally {
-        // Persist even on failure: identities minted before the crash are real
-        // and a re-run must reuse them rather than mint a second orphaned set.
-        if (opts.identityMap && identityMap.size) {
-          writeIdentityMap(opts.identityMap, identityMap);
-          log(`Wrote ${identityMap.size} identity mapping(s) to ${opts.identityMap}`);
-        }
-      }
+      await migrateApply({
+        connectionString: cs,
+        sourceStream,
+        targetResourceGuid,
+        commit: !!opts.commit,
+        ledger,
+      });
     } catch (e) {
       logError(e instanceof Error ? e.message : String(e));
       process.exit(2);
     } finally {
+      // Close even on failure: entries written before the crash are real, and a
+      // resumed run reads them rather than duplicating the work they describe.
+      ledger?.close();
       if (db) {
         await db.end().catch(() => undefined);
       }

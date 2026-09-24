@@ -158,23 +158,37 @@ threadvault migrate rehearse \
 
 # 4. Replay for real.
 export ACS_EXPECT_RESOURCE='<new-resource-guid>'
-threadvault migrate apply --from-jsonl dump.jsonl --identity-map identity-map.json
-threadvault migrate apply --from-jsonl dump.jsonl --identity-map identity-map.json --commit
+threadvault migrate apply --from-jsonl dump.jsonl --state replay.jsonl
+threadvault migrate apply --from-jsonl dump.jsonl --state replay.jsonl --commit
 ```
 
-### Keep the identity map
+### Keep the replay ledger
 
-`migrate apply` mints an identity on the new resource for every participant it replays. `--identity-map` is where that old-id → new-id mapping is written.
+`--state` is an append-only JSONL record of everything the replay has done: every identity minted on the new resource, and how far each thread got. It does two jobs, and both of them are the difference between a migration and an incident.
 
-**It is the only link between the replayed threads and the people in them.** Lose it and you have a perfect copy of your chat history that nobody can open. Keep the file, back it up, and use it to update your own user rows. Pass the same path on a re-run and Threadvault reuses those identities instead of minting a second, rival set.
+**It is the only link between the replayed threads and the people in them.** `migrate apply` mints an identity on the new resource for every participant. Lose that mapping and you have a byte-perfect copy of your chat history that nobody — not even the system user — can open.
 
-The map is also written if the replay crashes halfway — identities minted before the failure are real, and the resumed run must reuse them.
+**It makes the replay resumable.** A replay of a real estate takes a while, and ACS throttles. If the run dies at thread 5,000 of 7,200, re-running *without* a ledger creates 5,000 duplicate threads on the target, and cleaning that up means deleting threads by hand. With one, the re-run skips finished threads entirely and picks a half-delivered thread back up at the message it reached:
+
+```console
+$ threadvault migrate apply --from-jsonl dump.jsonl --state replay.jsonl --commit
+Resuming from replay.jsonl: 1962 identit(ies), 4981 thread(s) already replayed
+Skipping thread 19:… — already replayed
+Flushing thread 19:… to target 19:… (resuming after 3 message(s))
+```
+
+Run the dry run with the same `--state` first and it will tell you exactly how much is left rather than how much there is.
+
+It is append-only on purpose: rewriting a whole state file after every thread is O(n) per thread and O(n²) over an estate, and a crash that truncates the last line costs one record instead of the whole ledger.
+
+Back the file up, and use it to update your own user rows once the replay lands.
 
 ## Safety model
 
 | Guarantee | How |
 |---|---|
 | **Dry run by default** | Every writing command needs `--commit`. The dry run never opens a write connection. |
+| **Resumable replay** | With `--state`, an interrupted `migrate apply` resumes instead of duplicating the estate. Progress is recorded as it happens, not at the end. |
 | **Resource GUID guard** | `ACS_EXPECT_RESOURCE` is required for any ACS write. The command probes the target and refuses on mismatch. |
 | **Participants always restored** | There is no flag to skip them. Both production defects came from skipping them. |
 | **PHI-safe logging** | `content` / `text` / `html` / `body` are stripped before anything is printed, `--json` output included. `doctor` discards message bodies at the SDK boundary and never reads them at all. A test fails the build if any source file writes to stdout without going through the redacting logger. |
@@ -192,6 +206,8 @@ The map is also written if the replay crashes halfway — identities minted befo
 | `ACS_RETRY_ATTEMPTS` | optional (8) | Retries through ACS throttling. `retry-after` is honoured when ACS sends it. Permission and not-found errors fail immediately — backing off on a `403` only wastes time. |
 | `PG_SSL_NO_VERIFY` | optional (false) | Escape hatch for a private CA. Leave it off. |
 | `PG_HOST_OVERRIDE` | optional | `host=address` pairs, comma-separated, for pinned DNS. |
+
+`migrate apply` takes `--state <path>` for the replay ledger. It is not required, but committing without it warns — and it should.
 
 See [`.env.example`](.env.example).
 

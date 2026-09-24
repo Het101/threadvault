@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { migrateApply } from '../src/migrate/apply.ts';
 import type { Rec } from '../src/mirror/types.ts';
+import { ReplayLedger } from '../src/migrate/state.ts';
 
 const createdUsers: string[] = [];
 const createdThreads: Array<{ topic: string }> = [];
@@ -105,7 +106,7 @@ describe('migrateApply', () => {
       sourceStream: recs(fixture),
       targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
     });
-    expect(stats).toEqual({ threads: 1, participants: 2, messages: 1, identitiesMinted: 0, skipped: 0 });
+    expect(stats).toMatchObject({ threads: 1, participants: 2, messages: 1, identitiesMinted: 0, skipped: 0 });
     expect(createdThreads).toHaveLength(0);
     expect(sentMessages).toHaveLength(0);
   });
@@ -179,16 +180,15 @@ describe('migrateApply regressions', () => {
   });
 
   it('reuses a supplied identity map instead of minting a rival set', async () => {
-    const identityMap = new Map([
-      ['8:acs:old_sys', '8:acs:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa_kept-sys'],
-      ['8:acs:old_user', '8:acs:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa_kept-user'],
-    ]);
+    const ledger = ReplayLedger.ephemeral();
+    ledger.recordIdentity('8:acs:old_sys', '8:acs:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa_kept-sys');
+    ledger.recordIdentity('8:acs:old_user', '8:acs:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa_kept-user');
     const stats = await migrateApply({
       connectionString: 'endpoint=https://mock.communication.azure.com/;accesskey=mock',
       sourceStream: recs(fixture),
       targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
       commit: true,
-      identityMap,
+      ledger,
     });
     expect(stats.identitiesMinted).toBe(0);
     expect(addedParticipants.map((p) => p.id.communicationUserId)).toEqual([
@@ -197,16 +197,16 @@ describe('migrateApply regressions', () => {
     ]);
   });
 
-  it('records every minted identity in the map so the caller can persist it', async () => {
-    const identityMap = new Map<string, string>();
+  it('records every minted identity in the ledger so the caller can persist it', async () => {
+    const ledger = ReplayLedger.ephemeral();
     await migrateApply({
       connectionString: 'endpoint=https://mock.communication.azure.com/;accesskey=mock',
       sourceStream: recs(fixture),
       targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
       commit: true,
-      identityMap,
+      ledger,
     });
-    expect([...identityMap.keys()].sort()).toEqual(['8:acs:old_sys', '8:acs:old_user']);
+    expect([...ledger.identities.keys()].sort()).toEqual(['8:acs:old_sys', '8:acs:old_user']);
   });
 
   it('does not count participants or messages for a thread that failed to create', async () => {
@@ -219,5 +219,95 @@ describe('migrateApply regressions', () => {
     });
     expect(stats).toMatchObject({ threads: 0, participants: 0, messages: 0 });
     expect(sentMessages).toHaveLength(0);
+  });
+});
+
+describe('migrateApply resume', () => {
+  beforeEach(() => {
+    createdUsers.length = 0;
+    createdThreads.length = 0;
+    addedParticipants.length = 0;
+    sentMessages.length = 0;
+  });
+
+  it('marks a thread done once every message has landed', async () => {
+    const ledger = ReplayLedger.ephemeral();
+    await migrateApply({
+      connectionString: 'endpoint=https://mock.communication.azure.com/;accesskey=mock',
+      sourceStream: recs(fixture),
+      targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      commit: true,
+      ledger,
+    });
+    expect(ledger.threads.get('19:old@thread.v2')).toEqual({
+      target: 'thread-1',
+      messages: 1,
+      done: true,
+    });
+  });
+
+  it('re-running a finished replay writes nothing at all', async () => {
+    const ledger = ReplayLedger.ephemeral();
+    const opts = {
+      connectionString: 'endpoint=https://mock.communication.azure.com/;accesskey=mock',
+      targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      commit: true,
+      ledger,
+    };
+    await migrateApply({ ...opts, sourceStream: recs(fixture) });
+    createdThreads.length = 0;
+    addedParticipants.length = 0;
+    sentMessages.length = 0;
+
+    const second = await migrateApply({ ...opts, sourceStream: recs(fixture) });
+    // The duplicate-estate failure: without the ledger this creates the whole
+    // thing a second time.
+    expect(createdThreads).toHaveLength(0);
+    expect(sentMessages).toHaveLength(0);
+    expect(addedParticipants).toHaveLength(0);
+    expect(second.threadsResumed).toBe(1);
+    expect(second.threads).toBe(0);
+  });
+
+  it('resumes a half-delivered thread from the message it reached', async () => {
+    const threeMessages: Rec[] = [
+      fixture[0]!,
+      fixture[1]!,
+      fixture[2]!,
+      fixture[3]!,
+      { ...(fixture[3] as Extract<Rec, { kind: 'message' }>), messageId: 'm-2', content: 'dolor' },
+      { ...(fixture[3] as Extract<Rec, { kind: 'message' }>), messageId: 'm-3', content: 'sit' },
+    ];
+    const ledger = ReplayLedger.ephemeral();
+    // An earlier run created the thread and delivered the first message.
+    ledger.recordThread('19:old@thread.v2', { target: 'thread-existing', messages: 1, done: false });
+
+    const stats = await migrateApply({
+      connectionString: 'endpoint=https://mock.communication.azure.com/;accesskey=mock',
+      sourceStream: recs(threeMessages),
+      targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      commit: true,
+      ledger,
+    });
+
+    expect(createdThreads).toHaveLength(0); // reused, not recreated
+    expect(sentMessages.map((m) => m.content)).toEqual(['dolor', 'sit']);
+    expect(stats.messages).toBe(2);
+    // Participants were already added by the earlier run.
+    expect(addedParticipants).toHaveLength(0);
+    expect(ledger.threads.get('19:old@thread.v2')?.done).toBe(true);
+  });
+
+  it('counts already-done work in a dry run instead of promising to redo it', async () => {
+    const ledger = ReplayLedger.ephemeral();
+    ledger.recordThread('19:old@thread.v2', { target: 'thread-1', messages: 1, done: true });
+    const stats = await migrateApply({
+      connectionString: 'endpoint=https://mock.communication.azure.com/;accesskey=mock',
+      sourceStream: recs(fixture),
+      targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      ledger,
+    });
+    expect(stats).toMatchObject({ threads: 0, threadsResumed: 1, messages: 0, participants: 0 });
+    expect(stats.messagesAlreadySent).toBe(1);
   });
 });
