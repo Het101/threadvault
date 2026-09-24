@@ -11,12 +11,16 @@ const dnsLookup = promisify(lookup) as (
 export type PgClient = pg.Client;
 
 /**
- * Azure Postgres Flexible Server refuses unencrypted connections. Encrypt
- * without pinning Azure's CA unless PG_SSL_VERIFY=true. Local hosts stay plain.
+ * Azure Postgres Flexible Server refuses unencrypted connections. Verify the
+ * certificate by default: this connection carries database credentials and PHI,
+ * and an unverified TLS session is a TLS session anyone in the path can read.
+ * Azure's roots are in Node's bundled trust store, and `servername` below keeps
+ * verification working even though we dial a resolved address. Local hosts stay
+ * plain. PG_SSL_NO_VERIFY=true is the escape hatch for a private CA.
  */
 export function sslFor(host: string): false | { rejectUnauthorized: boolean } {
   if (/^(localhost|127\.0\.0\.1|::1|host\.docker\.internal)$/i.test(host)) return false;
-  return { rejectUnauthorized: process.env.PG_SSL_VERIFY === 'true' };
+  return { rejectUnauthorized: process.env.PG_SSL_NO_VERIFY !== 'true' };
 }
 
 const dnsCache = new Map<string, string>();
