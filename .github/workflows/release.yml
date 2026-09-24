@@ -1,0 +1,62 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Required for npm provenance: npm uses this to attest that the package was
+  # built from this repo, at this commit, by this workflow. The npm page then
+  # shows where it came from, which matters more than usual for a tool people
+  # point at production credentials.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+
+      # A tag that disagrees with package.json publishes the wrong version
+      # under the right name, which cannot be undone.
+      - name: tag must match package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -e
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag v$tag does not match package.json $pkg"
+            exit 1
+          fi
+          echo "tag and package.json agree on $pkg"
+
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      # Prove the built artifact actually runs before it is published.
+      - name: the bin must work from a clean install
+        run: |
+          set -e
+          npm pack
+          mkdir -p /tmp/verify && cd /tmp/verify
+          npm init -y > /dev/null
+          npm install "$GITHUB_WORKSPACE"/threadvault-*.tgz
+          ./node_modules/.bin/threadvault --version
+          ./node_modules/.bin/threadvault migrate verify --help > /dev/null
+          echo "installed bin works"
+
+      - name: publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

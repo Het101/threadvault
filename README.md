@@ -4,8 +4,8 @@
 
 [![CI](https://github.com/Het101/threadvault/actions/workflows/ci.yml/badge.svg)](https://github.com/Het101/threadvault/actions/workflows/ci.yml)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/Het101/threadvault/blob/main/LICENSE)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/Het101/threadvault/blob/main/CONTRIBUTING.md)
 
 ACS gives you no history export, and every identity it mints is scoped to one resource — `8:acs:<resourceGuid>_<userGuid>`. Move, rotate, or lose that resource and every identity you stored turns to garbage in the same instant. The only way back is a full REST walk plus a replay you write yourself, under pressure, at the worst possible time.
 
@@ -247,7 +247,7 @@ Read-only, and never reads a message body: every check runs on counts and metada
 
 `migrate apply` takes `--state <path>` for the replay ledger. It is not required, but committing without it warns — and it should.
 
-See [`.env.example`](.env.example).
+See [`.env.example`](https://github.com/Het101/threadvault/blob/main/.env.example).
 
 ### Reading your own tables
 
@@ -299,14 +299,14 @@ Issues and pull requests welcome. Please don't include real chat content, connec
 
 | | |
 |---|---|
-| [CONTRIBUTING.md](CONTRIBUTING.md) | How to build it, the rules a PR is held to, and why each one exists |
-| [SECURITY.md](SECURITY.md) | How to report a vulnerability, and the guarantees the code is built to keep |
-| [CHANGELOG.md](CHANGELOG.md) | What changed, including the breaking bits |
-| [ROADMAP.md](ROADMAP.md) | Where it is going, and what it will deliberately not do |
-| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | How we behave here |
+| [CONTRIBUTING.md](https://github.com/Het101/threadvault/blob/main/CONTRIBUTING.md) | How to build it, the rules a PR is held to, and why each one exists |
+| [SECURITY.md](https://github.com/Het101/threadvault/blob/main/SECURITY.md) | How to report a vulnerability, and the guarantees the code is built to keep |
+| [CHANGELOG.md](https://github.com/Het101/threadvault/blob/main/CHANGELOG.md) | What changed, including the breaking bits |
+| [ROADMAP.md](https://github.com/Het101/threadvault/blob/main/ROADMAP.md) | Where it is going, and what it will deliberately not do |
+| [CODE_OF_CONDUCT.md](https://github.com/Het101/threadvault/blob/main/CODE_OF_CONDUCT.md) | How we behave here |
 
 Threadvault is pre-1.0. The commands and their guarantees are stable; flags may still move, and anything that does will be called out in the changelog.
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](https://github.com/Het101/threadvault/blob/main/LICENSE).

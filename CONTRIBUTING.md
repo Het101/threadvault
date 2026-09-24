@@ -85,6 +85,22 @@ Open an issue with what you ran, what you expected, and what happened. Redact fr
 
 Security problems do not go in issues. See [SECURITY.md](SECURITY.md).
 
+## Releasing
+
+Maintainers only.
+
+1. Update `CHANGELOG.md`: rename `[Unreleased]` to the version and date.
+2. Bump `version` in `package.json` and the `.version()` call in `src/cli.ts`.
+3. Commit, then `git tag -a vX.Y.Z -m "threadvault X.Y.Z"` and
+   `git push origin main --follow-tags`.
+
+The tag triggers `.github/workflows/release.yml`, which refuses to publish if
+the tag and `package.json` disagree, runs typecheck, tests and build, installs
+the packed tarball into an empty directory and runs the binary, and only then
+publishes with npm provenance.
+
+It needs an `NPM_TOKEN` repository secret (an npm automation token).
+
 ## Where things live
 
 ```
