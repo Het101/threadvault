@@ -1,7 +1,23 @@
 import type { PgClient } from '../db/pg.ts';
 import type { Rec } from './types.ts';
 import { resolveSentAt, resolveOriginalSenderUserId } from '../acs/identity.ts';
-import { randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
+
+/**
+ * A stable stand-in `our_user_id` for a participant the host has not mapped yet.
+ *
+ * Must be derived, never random: the participant PK is (thread_id, our_user_id),
+ * so a fresh UUID per run makes ON CONFLICT never fire and every re-run adds a
+ * duplicate participant row. Derived from the ACS id, re-running is a no-op.
+ * Name-based UUIDv5 shape so it is obviously synthetic next to a real host id.
+ */
+export function shadowUserId(acsId: string): string {
+  const h = createHash('sha1').update(`threadvault:shadow:${acsId}`).digest();
+  h[6] = (h[6]! & 0x0f) | 0x50;
+  h[8] = (h[8]! & 0x3f) | 0x80;
+  const x = h.subarray(0, 16).toString('hex');
+  return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20, 32)}`;
+}
 
 /**
  * Upserts a stream of `Rec` rows into the threadvault_* Postgres tables.
@@ -32,6 +48,7 @@ export async function sinkPostgres(
         VALUES ($1, $2, $3, $4)
         ON CONFLICT (external_id) DO UPDATE SET
           topic = EXCLUDED.topic,
+          created_on = EXCLUDED.created_on,
           metadata = EXCLUDED.metadata
         RETURNING id;
       `;
@@ -64,11 +81,9 @@ export async function sinkPostgres(
         ourUserUuid = rec.ourUserId;
       }
 
-      // Standalone identity backfill: mint temporary shadow identities if host sync isn't set up yet
-      if (!ourUserUuid) {
-        ourUserUuid = randomUUID();
-        // Since we don't have resourceGuid explicitly here, we rely on the DB constraints
-      }
+      // No host mapping for this ACS id yet. Stand in with a derived id so the
+      // row is still there to be re-pointed later, and so re-running is a no-op.
+      if (!ourUserUuid) ourUserUuid = shadowUserId(rec.acsId);
 
       const sql = `
         INSERT INTO threadvault_participants (thread_id, our_user_id, acs_id, display_name)

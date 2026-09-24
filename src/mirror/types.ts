@@ -37,6 +37,19 @@ export type Rec =
       metadata: Record<string, string> | null;
     };
 
+/**
+ * ACS control messages. ACS emits them itself when participants or the topic
+ * change, they carry no body, and the replay's own addParticipants /
+ * createChatThread re-emit them naturally. Replaying them as text posts a wall
+ * of empty messages into every thread, so `migrate apply` skips them and
+ * `migrate plan` counts them separately.
+ */
+const REPLAYABLE_TYPES = new Set(['text', 'html']);
+
+export function isReplayable(rec: Extract<Rec, { kind: 'message' }>): boolean {
+  return !rec.type || REPLAYABLE_TYPES.has(rec.type);
+}
+
 export function parseRec(line: string): Rec | null {
   if (!line.trim()) return null;
   let d: unknown;

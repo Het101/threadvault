@@ -14,7 +14,9 @@ export type MirrorOpts = {
   threadIds?: string[];
 };
 
-export async function mirrorBackfill(opts: MirrorOpts): Promise<{ threads: number; participants: number; messages: number } | void> {
+export type MirrorStats = { threads: number; participants: number; messages: number };
+
+export async function mirrorBackfill(opts: MirrorOpts): Promise<MirrorStats | void> {
   let stream: AsyncIterable<Rec>;
 
   if (opts.fromJsonl) {
@@ -30,12 +32,20 @@ export async function mirrorBackfill(opts: MirrorOpts): Promise<{ threads: numbe
     });
   }
 
-  if (!opts.db && !opts.jsonlPath) {
-    throw new Error('Either db or jsonlPath must be provided to sink the extracted data.');
-  }
-
   if (opts.db && opts.jsonlPath) {
     throw new Error('Backfilling to both DB and JSONL simultaneously is not implemented.');
+  }
+
+  // No sink is the dry run: walk the whole source and count. It must not open a
+  // read-only connection and then attempt INSERTs, which is what it used to do.
+  if (!opts.db && !opts.jsonlPath) {
+    const stats: MirrorStats = { threads: 0, participants: 0, messages: 0 };
+    for await (const rec of stream) {
+      if (rec.kind === 'thread') stats.threads++;
+      else if (rec.kind === 'participant') stats.participants++;
+      else stats.messages++;
+    }
+    return stats;
   }
 
   if (opts.db) {

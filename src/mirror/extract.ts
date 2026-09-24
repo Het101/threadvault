@@ -18,7 +18,7 @@ export async function* extractAcs(
   const acs = createAcs(opts.connectionString);
   const primaryChat = await acs.chatFor(opts.readerAcsId);
 
-  let threads = new Set(opts.threadIds || []);
+  const threads = new Set(opts.threadIds || []);
 
   if (!opts.threadIds || opts.threadIds.length === 0) {
     try {

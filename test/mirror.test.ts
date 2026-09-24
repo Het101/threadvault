@@ -90,3 +90,13 @@ describe('sinkPostgres', () => {
     expect(msgQuery?.values[5]).toEqual(new Date('2023-01-01T09:00:00.000Z'));
   });
 });
+
+describe('shadowUserId', () => {
+  it('is stable for an ACS id, so re-running the backfill is a no-op', async () => {
+    const { shadowUserId } = await import('../src/mirror/sink-postgres.ts');
+    const a = shadowUserId('8:acs:test_auth-1');
+    expect(shadowUserId('8:acs:test_auth-1')).toBe(a);
+    expect(shadowUserId('8:acs:test_auth-2')).not.toBe(a);
+    expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+});
