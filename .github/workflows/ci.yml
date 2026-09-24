@@ -23,3 +23,56 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: node dist/cli.js --help
+      # Every subcommand must at least be reachable in the built bundle. A
+      # broken import only surfaces when the command is actually invoked.
+      - name: smoke every command
+        run: |
+          set -e
+          node dist/cli.js probe --help > /dev/null
+          node dist/cli.js doctor --help > /dev/null
+          node dist/cli.js mirror backfill --help > /dev/null
+          node dist/cli.js migrate extract --help > /dev/null
+          node dist/cli.js migrate plan --help > /dev/null
+          node dist/cli.js migrate rehearse --help > /dev/null
+          node dist/cli.js migrate apply --help > /dev/null
+          node dist/cli.js migrate verify --help > /dev/null
+
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # The pre-commit hook can be bypassed with --no-verify. This cannot.
+      - name: scan the tree for committed secrets
+        run: |
+          set -e
+          if git grep -nE 'accesskey=[A-Za-z0-9+/]{20,}={0,2}' -- . ':!package-lock.json'; then
+            echo "::error::an ACS access key is present in the tree"
+            exit 1
+          fi
+          if git grep -nE '(postgres|postgresql)://[^:/@[:space:]]+:[A-Za-z0-9!#%^&*_+=~.-]{10,}@' -- . ':!package-lock.json'; then
+            echo "::error::a database URL with a live password is present in the tree"
+            exit 1
+          fi
+          echo "no secrets found in the tree"
+
+      - name: commit messages are conventional and unattributed
+        run: |
+          set -e
+          base="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$base" ]; then base="HEAD~1"; fi
+          for sha in $(git log --format='%H' "$base..HEAD"); do
+            git log -1 --format='%B' "$sha" > /tmp/msg
+            .githooks/commit-msg /tmp/msg
+          done
+          echo "commit messages ok"
+
+      - name: dependency audit
+        run: npm audit --audit-level=high
