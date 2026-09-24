@@ -1,0 +1,50 @@
+#!/bin/sh
+# Threadvault pre-commit. Wired up by `npm install` via the prepare script
+# (git config core.hooksPath .githooks). Run `git commit --no-verify` to skip,
+# but CI runs the same checks, so skipping only moves the failure later.
+set -e
+
+fail() {
+  echo ""
+  echo "pre-commit: $1" >&2
+  echo ""
+  exit 1
+}
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+# --- 1. Secrets and PHI must never enter the history -------------------------
+# These are the rules the whole tool exists to protect. A commit is the last
+# cheap place to catch them; after a push to a public repo it is too late.
+
+if echo "$staged" | grep -qE '(^|/)\.env$|(^|/)\.env\.[a-z]+$'; then
+  fail "refusing to commit a .env file. Use .env.example with placeholders."
+fi
+
+added=$(git diff --cached --unified=0 -- $(echo "$staged" | tr '\n' ' ') 2>/dev/null | grep '^+' || true)
+
+# Match on the SHAPE of a real secret, not on an allowlist of placeholders.
+# An allowlist has to be extended every time someone writes documentation, and a
+# check that cries wolf is a check people learn to bypass. A real ACS key is
+# long base64; <key>, $ACS_KEY and a grep pattern in this file are not.
+if echo "$added" | grep -qE 'accesskey=[A-Za-z0-9+/]{20,}={0,2}'; then
+  fail "an ACS access key looks like it is being committed. Reference it by env var name."
+fi
+
+# postgres://user:password@host. A placeholder such as :pass@ or :password@ is
+# short; anything ten characters or longer is treated as the real thing.
+if echo "$added" | grep -qE '(postgres|postgresql)://[^:/@[:space:]]+:[A-Za-z0-9!#%^&*_+=~.-]{10,}@'; then
+  fail "a database URL with a live password looks like it is being committed."
+fi
+
+# --- 2. The code has to actually work ----------------------------------------
+if echo "$staged" | grep -qE '\.(ts|json)$'; then
+  echo "pre-commit: typecheck"
+  npm run --silent typecheck
+
+  echo "pre-commit: tests"
+  npm run --silent test
+fi
+
+exit 0
