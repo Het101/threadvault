@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isThrottled, retryAfterMs, withRetry } from '../src/acs/retry.ts';
+import { isTerminal, isThrottled, retryAfterMs, withRetry } from '../src/acs/retry.ts';
 
 describe('isThrottled', () => {
   it('detects numeric 429/503 and body text when the SDK drops the status', () => {
@@ -42,8 +42,9 @@ describe('withRetry', () => {
     expect(waits).toEqual([1000, 1000]);
   });
 
-  it('fails a non-throttle error on the second attempt', async () => {
+  it('gives up immediately on a terminal error instead of backing off', async () => {
     let n = 0;
+    const waits: number[] = [];
     await expect(
       withRetry(
         'createChatThread',
@@ -51,9 +52,32 @@ describe('withRetry', () => {
           n++;
           throw Object.assign(new Error('Forbidden'), { statusCode: 403 });
         },
-        { attempts: 8, sleep: async () => undefined, random: () => 0 },
+        { attempts: 8, sleep: async (ms) => { waits.push(ms); }, random: () => 0 },
       ),
     ).rejects.toThrow(/createChatThread: Forbidden/);
+    expect(n).toBe(1);
+    expect(waits).toEqual([]);
+  });
+
+  it('still gives a transient non-throttle error one more chance', async () => {
+    let n = 0;
+    const result = await withRetry(
+      'getProperties',
+      async () => {
+        n++;
+        if (n === 1) throw new Error('socket hang up');
+        return 'ok';
+      },
+      { attempts: 8, sleep: async () => undefined, random: () => 0 },
+    );
+    expect(result).toBe('ok');
     expect(n).toBe(2);
+  });
+
+  it('keeps retrying a throttle even though ACS words it as a 403-ish failure', async () => {
+    expect(isTerminal({ statusCode: 429 })).toBe(false);
+    expect(isTerminal({ statusCode: 403 })).toBe(true);
+    expect(isTerminal({ message: 'CommunicationError Forbidden' })).toBe(true);
+    expect(isTerminal({ message: 'socket hang up' })).toBe(false);
   });
 });
