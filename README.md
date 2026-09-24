@@ -1,5 +1,9 @@
 # Threadvault
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Het101/threadvault/main/docs/assets/hero.png" alt="Threadvault — protect your ACS chat history. Mirror, migrate and recover Azure Communication Services chat into your own PostgreSQL database." width="820">
+</p>
+
 **Your Azure Communication Services chat resource should be disposable. Right now it isn't.**
 
 [![npm](https://img.shields.io/npm/v/threadvault.svg)](https://www.npmjs.com/package/threadvault)
@@ -12,16 +16,9 @@ ACS gives you no history export, and every identity it mints is scoped to one re
 
 Threadvault is that walk and that replay, already written, already survived.
 
-```
-   ACS resource (rented)                    Postgres (yours)
-   ┌──────────────────┐                     ┌──────────────────────────┐
-   │ threads          │  mirror backfill →  │ threadvault_threads      │
-   │ participants     │                     │ threadvault_identities   │
-   │ messages         │  ← migrate apply    │ threadvault_participants │
-   └──────────────────┘                     │ threadvault_messages     │
-      throwaway                             └──────────────────────────┘
-                                                  source of truth
-```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Het101/threadvault/main/docs/assets/data-flow.png" alt="Azure Communication Services chat flowing into your own PostgreSQL database" width="760">
+</p>
 
 Mirror once and ACS becomes a cache. Every message lands in **your** database under **your** user IDs, with the **original** timestamps — so the day you need a new resource, you replay instead of negotiate.
 
