@@ -76,9 +76,30 @@ These are earned, and a PR that breaks one will be sent back even if the tests p
 
 ## Pull requests
 
+`main` is protected. Everything lands through a pull request, including the
+maintainer's own work — there is no bypass configured, on purpose.
+
+```bash
+git checkout -b fix/thing
+# ... work, commit ...
+git push -u origin fix/thing
+gh pr create --fill
+gh pr merge --squash --auto   # merges itself once CI is green
+```
+
+To merge, a PR must:
+
+- pass `test (22)`, `test (24)`, `hygiene` and `analyze` (CodeQL)
+- be up to date with `main`
+- carry only signed commits
+- have every review thread resolved
+
+Merge commits are disabled; squash or rebase only, so history stays linear.
+
+Beyond the mechanics:
+
 - One concern per PR. A refactor and a fix in the same diff is two PRs.
 - Say what breaks without the change. If it fixes a bug, the PR should contain the test that was failing.
-- CI must be green: tests, typecheck, build, and `node dist/cli.js --help` on Node 22 and 24.
 - Behaviour changes need the README updated in the same PR.
 
 ## Reporting a bug
