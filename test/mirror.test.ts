@@ -73,7 +73,9 @@ describe('sinkPostgres', () => {
 
     const stats = await sinkPostgres(stream, mockDb);
 
-    expect(stats).toEqual({ threads: 1, participants: 1, messages: 1 });
+    // This fixture's ACS id has a non-UUID resource half, so it does not parse
+    // and no identity row is written — hence identities: 0.
+    expect(stats).toEqual({ threads: 1, participants: 1, messages: 1, identities: 0 });
 
     const threadQuery = executedQueries.find(q => q.sql.includes('INSERT INTO threadvault_threads'));
     expect(threadQuery).toBeDefined();
@@ -98,5 +100,52 @@ describe('shadowUserId', () => {
     expect(shadowUserId('8:acs:test_auth-1')).toBe(a);
     expect(shadowUserId('8:acs:test_auth-2')).not.toBe(a);
     expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+});
+
+describe('sinkPostgres records identities', () => {
+  it('writes an identity row so the mirror can map an ACS id back to a person', async () => {
+    const executed: Array<{ sql: string; values: any[] }> = [];
+    const db = {
+      query: vi.fn().mockImplementation((sql: string, values?: any[]) => {
+        executed.push({ sql, values: values || [] });
+        if (sql.includes('SELECT our_user_id, acs_id')) return Promise.resolve({ rows: [] });
+        if (sql.includes('INSERT INTO threadvault_threads')) return Promise.resolve({ rows: [{ id: 'th-1' }] });
+        return Promise.resolve({ rowCount: 1, rows: [] });
+      }),
+    } as unknown as PgClient;
+
+    const guid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const stats = await sinkPostgres(
+      asyncGeneratorFromArray<Rec>([
+        {
+          kind: 'thread',
+          legacyThreadId: '19:t@thread.v2',
+          topic: 'Care',
+          createdOn: '2023-01-01T00:00:00.000Z',
+          createdByAcsId: null,
+          ourThreadId: null,
+          deletedOn: null,
+          readerAcsId: `8:acs:${guid}_reader`,
+        },
+        {
+          kind: 'participant',
+          legacyThreadId: '19:t@thread.v2',
+          acsId: `8:acs:${guid}_alice`,
+          displayName: 'Alice',
+          ourUserId: 'u-alice',
+        },
+      ]),
+      db,
+    );
+
+    expect(stats.identities).toBe(1);
+    const idQuery = executed.find((q) => q.sql.includes('INSERT INTO threadvault_identities'));
+    expect(idQuery).toBeDefined();
+    expect(idQuery?.values[0]).toBe('u-alice');
+    expect(idQuery?.values[1]).toBe(`8:acs:${guid}_alice`);
+    // The resource GUID comes out of the ACS id itself, so nothing extra is needed.
+    expect(idQuery?.values[2]).toBe(guid);
+    expect(idQuery?.values[3]).toBe('Alice');
   });
 });

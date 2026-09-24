@@ -16,7 +16,13 @@ export type MirrorOpts = {
   concurrency?: number;
 };
 
-export type MirrorStats = { threads: number; participants: number; messages: number };
+export type MirrorStats = {
+  threads: number;
+  participants: number;
+  messages: number;
+  /** Rows written to threadvault_identities. Zero on a dry run or a JSONL sink. */
+  identities: number;
+};
 
 export async function mirrorBackfill(opts: MirrorOpts): Promise<MirrorStats | void> {
   let stream: AsyncIterable<Rec>;
@@ -42,7 +48,7 @@ export async function mirrorBackfill(opts: MirrorOpts): Promise<MirrorStats | vo
   // No sink is the dry run: walk the whole source and count. It must not open a
   // read-only connection and then attempt INSERTs, which is what it used to do.
   if (!opts.db && !opts.jsonlPath) {
-    const stats: MirrorStats = { threads: 0, participants: 0, messages: 0 };
+    const stats: MirrorStats = { threads: 0, participants: 0, messages: 0, identities: 0 };
     for await (const rec of stream) {
       if (rec.kind === 'thread') stats.threads++;
       else if (rec.kind === 'participant') stats.participants++;

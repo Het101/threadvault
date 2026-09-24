@@ -149,6 +149,11 @@ threadvault mirror backfill --reader-acs-id 8:acs:… --concurrency 8 --commit
 
 The schema is created for you (`threadvault_*` tables, `CREATE TABLE IF NOT EXISTS`). It does not touch your own tables.
 
+It also records who each participant is, in `threadvault_identities`, keyed on
+your user ID and the resource GUID taken from the ACS id. That is what lets a
+second run recognise people it has already seen, and what gives `doctor`
+somebody to check when you have no `threadvault.yml` mapping.
+
 Three properties the mirror guarantees, all of them learned the hard way:
 
 - **`sender_user_id` is your UUID, never an ACS identity.** ACS identities die with the resource. Yours don't.
