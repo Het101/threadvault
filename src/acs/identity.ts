@@ -4,7 +4,10 @@
  * whole reason this tool exists.
  */
 
-const ACS_ID = /^8:acs:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})_([0-9a-f-]+)$/i;
+// The user half is deliberately loose: only the resource half drives decisions,
+// and ACS does not promise the user half is a bare UUID (`_sys`, suffixed ids).
+// Requiring hex there silently un-parsed real identities.
+const ACS_ID = /^8:acs:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})_(\S+)$/i;
 
 export type ParsedAcsId = {
   resourceGuid: string;
