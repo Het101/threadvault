@@ -77,18 +77,20 @@ That's it. ACS is now disposable.
 
 | Command | What it does | Writes? |
 |---|---|---|
-| `probe` | Mints one throwaway identity to discover the resource GUID. Prints host + GUID, never the key. | No |
+| `probe` | Mints one throwaway identity to discover the resource GUID. Prints host + GUID, never the key. | Not your data. Mints and deletes one throwaway identity\* |
 | `doctor` | Audits ACS + your database for the five failure modes below. | Not your data. Mints and deletes one throwaway identity\* |
 | `mirror backfill` | Copies threads, participants, and messages into Postgres. | Only with `--commit` |
 | `migrate extract` | Exports ACS chat history to a portable JSONL file. | No — read-only |
 | `migrate plan` | Inspects a dump and flags every gap before you replay. | No — read-only |
 | `migrate rehearse` | Writes one synthetic thread, asserts four durability goals, deletes it. | Yes (target resource) |
-| `migrate apply` | Replays a dump onto a new ACS resource. Resumable. | Only with `--commit` |
+| `migrate apply` | Replays a dump onto a new ACS resource. Resumable. | Your data: only with `--commit`. Probes the target either way\* |
 | `migrate verify` | Reads the replayed estate back and proves it matches the source. | Not your data. Mints and deletes one reader unless `--reader-acs-id` is given\* |
 
 **Every write is a dry run until you pass `--commit`.** The dry run walks the entire source and reports exactly what the real run would do — it never opens a write path.
 
-\* ACS offers no way to ask which resource a connection string belongs to. The only way to find out is to mint an identity and read the GUID out of it, so `probe`, `doctor` and `verify` create one and delete it immediately. Nothing else is touched: no thread, message or participant is created, changed or removed, and no message is ever read. `doctor --no-acs` does not contact ACS at all.
+\* ACS offers no way to ask which resource a connection string belongs to. The only way to find out is to mint an identity and read the GUID out of it. So `probe`, `doctor`, `verify` and `apply` each create one and delete it immediately — `apply` does this even on a dry run, because confirming you are pointed at the intended resource is the whole point of the guard.
+
+Nothing else is touched by any of them: no thread, message or participant is created, changed or removed, and no message body is ever read. `doctor --no-acs` does not contact ACS at all, and `migrate plan` never does.
 
 ## The five failure modes `doctor` catches
 
