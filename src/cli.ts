@@ -230,6 +230,12 @@ migrate
   .option('--keep', 'do not delete the rehearsed thread')
   .action(async (opts: { systemAcsId?: string; nonSystemAcsId?: string; nonSystemOurUserId?: string; keep?: boolean }) => {
     try {
+      // rehearse writes to ACS, so it takes the same guard as apply.
+      const targetResourceGuid = acsExpectResource();
+      if (!targetResourceGuid) {
+        logError('ACS_EXPECT_RESOURCE is required. Rehearse writes a thread to the target and refuses without it.');
+        process.exit(2);
+      }
       const cs = acsConnectionString();
       if (!cs) {
         logError('ACS_CONNECTION_STRING is not set');
@@ -242,6 +248,7 @@ migrate
       log('Starting rehearse...');
       await migrateRehearse({
         connectionString: cs,
+        targetResourceGuid,
         systemAcsId: opts.systemAcsId,
         nonSystemAcsId: opts.nonSystemAcsId,
         nonSystemOurUserId: opts.nonSystemOurUserId,

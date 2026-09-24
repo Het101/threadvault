@@ -1,4 +1,5 @@
-import { createAcs } from '../acs/client.ts';
+import { createAcs, probeResource } from '../acs/client.ts';
+import { isKnownGuid } from '../acs/identity.ts';
 import { listParticipantIds } from '../acs/read.ts';
 import { log } from '../log.ts';
 import { resolveSentAt, resolveOriginalSenderUserId } from '../acs/identity.ts';
@@ -9,14 +10,30 @@ import { resolveSentAt, resolveOriginalSenderUserId } from '../acs/identity.ts';
  * 2. original sender resolves to the right our_user_id
  * 3. a non-system participant can successfully sendMessage
  * 4. participant count matches the source
+ *
+ * This writes to ACS — it creates a thread, sends messages and deletes the
+ * thread — so it takes the same resource guard as `apply`. Pointing a rehearsal
+ * at the wrong resource is how you find out that "it only writes a test thread"
+ * still meant writing to production.
  */
 export async function migrateRehearse(opts: {
   connectionString: string; // The NEW target resource connection string
+  targetResourceGuid: string;
   systemAcsId: string;
   nonSystemAcsId: string;
   nonSystemOurUserId: string;
   keep?: boolean;
 }): Promise<void> {
+  const probe = await probeResource(opts.connectionString);
+  if (!isKnownGuid(probe.guid)) {
+    throw new Error(`Could not probe target ACS: ${probe.error ?? 'unknown error'}`);
+  }
+  if (probe.guid !== opts.targetResourceGuid) {
+    throw new Error(
+      `Target GUID mismatch. Expected ${opts.targetResourceGuid}, but target is ${probe.guid}`,
+    );
+  }
+
   const acs = createAcs(opts.connectionString);
   const sysChat = await acs.chatFor(opts.systemAcsId);
 
