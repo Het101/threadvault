@@ -1,3 +1,5 @@
+import type { PgClient } from './pg.ts';
+
 /** Idempotent DDL. PHI lives in threadvault_messages.content. */
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS threadvault_threads (
@@ -45,3 +47,9 @@ CREATE TABLE IF NOT EXISTS threadvault_messages (
 CREATE INDEX IF NOT EXISTS threadvault_messages_thread_sent
   ON threadvault_messages (thread_id, sent_at);
 `.trim();
+
+
+/** Idempotent: safe to call before every committing write. */
+export async function applySchema(client: PgClient): Promise<void> {
+  await client.query(SCHEMA_SQL);
+}

@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import { acsConnectionString, acsExpectResource, loadConfig } from './config.ts';
 import { probeResource } from './acs/client.ts';
 import { isKnownGuid } from './acs/identity.ts';
-import { connectReadOnly, connect } from './db/pg.ts';
+import { connectReadOnly, connect, type PgClient } from './db/pg.ts';
 import {
   loadHostThreads,
   loadHostUsers,
@@ -18,9 +18,13 @@ import { mirrorBackfill } from './mirror/backfill.ts';
 import { migrateRehearse } from './migrate/rehearse.ts';
 import { migrateApply } from './migrate/apply.ts';
 import { migrateExtract } from './migrate/extract.ts';
+import { migratePlan, logPlan } from './migrate/plan.ts';
 import { sourceJsonlFile } from './mirror/source-jsonl.ts';
-import { applySchema } from './db/migrate.ts';
-import { log, logError } from './log.ts';
+import { sourcePostgres } from './mirror/source-postgres.ts';
+import type { Rec } from './mirror/types.ts';
+import { applySchema } from './db/schema.ts';
+import { readIdentityMap, writeIdentityMap } from './migrate/identity-map.ts';
+import { log, logError, logJson } from './log.ts';
 
 const program = new Command();
 
@@ -145,7 +149,7 @@ program
       });
       const report = buildReport(resourceGuid, host, findings);
       if (wantJson) {
-        console.log(JSON.stringify(report, null, 2));
+        logJson(report);
       } else {
         log(formatReport(report));
       }
@@ -169,16 +173,17 @@ mirror
       const cs = acsConnectionString();
       const dbUrl = process.env.DATABASE_URL;
 
-      let db;
+      let db: PgClient | undefined;
       if (!opts.toJsonl) {
-        if (!dbUrl) {
-          logError('DATABASE_URL is not set and --to-jsonl is omitted.');
-          process.exit(2);
-        }
         if (!opts.commit) {
-          log('Dry run: establishing read-only connection. Pass --commit to write.');
-          db = await connectReadOnly(dbUrl);
+          // Dry run counts the source and writes nothing. It must not open a
+          // read-only connection and then try to INSERT through it.
+          log('Dry run: counting the source only. Pass --commit to write to Postgres.');
         } else {
+          if (!dbUrl) {
+            logError('DATABASE_URL is not set and --to-jsonl is omitted.');
+            process.exit(2);
+          }
           db = await connect(dbUrl, false);
           await applySchema(db); // ensure tables exist before upserting
         }
@@ -194,7 +199,10 @@ mirror
       });
 
       if (stats) {
-        log(`Backfill complete. Threads: ${stats.threads}, Participants: ${stats.participants}, Messages: ${stats.messages}`);
+        log(
+          `Backfill ${opts.commit || opts.toJsonl ? 'complete' : 'dry run'}. ` +
+            `Threads: ${stats.threads}, Participants: ${stats.participants}, Messages: ${stats.messages}`,
+        );
       } else {
         log('Backfill complete.');
       }
@@ -274,8 +282,13 @@ migrate
   .description('Replay threads, participants, and messages onto the target ACS resource.')
   .option('--from-jsonl <path>', 'path to JSONL extract')
   .option('--from-mirror', 'read from Postgres mirror')
+  .option(
+    '--identity-map <path>',
+    'JSON map of old ACS id -> target ACS id. Read before minting, rewritten after. Keep it: without it the replayed threads belong to nobody.',
+  )
   .option('--commit', 'must be passed to write to ACS (otherwise dry-run)')
-  .action(async (opts: { fromJsonl?: string; fromMirror?: boolean; commit?: boolean }) => {
+  .action(async (opts: { fromJsonl?: string; fromMirror?: boolean; identityMap?: string; commit?: boolean }) => {
+    let db: PgClient | undefined;
     try {
       const targetResourceGuid = acsExpectResource();
       if (!targetResourceGuid) {
@@ -289,35 +302,100 @@ migrate
         process.exit(2);
       }
 
-      let sourceStream;
+      let sourceStream: AsyncIterable<Rec>;
       if (opts.fromJsonl) {
         sourceStream = sourceJsonlFile(opts.fromJsonl);
       } else if (opts.fromMirror) {
-        logError('--from-mirror stream is not implemented yet.');
-        process.exit(2);
+        const dbUrl = process.env.DATABASE_URL;
+        if (!dbUrl) {
+          logError('DATABASE_URL is not set for --from-mirror');
+          process.exit(2);
+        }
+        db = await connectReadOnly(dbUrl);
+        sourceStream = sourcePostgres(db);
       } else {
         logError('Must specify --from-jsonl or --from-mirror');
         process.exit(2);
       }
 
-      await migrateApply({
-        connectionString: cs,
-        sourceStream,
-        targetResourceGuid,
-        commit: !!opts.commit,
-      });
+      const identityMap = opts.identityMap ? readIdentityMap(opts.identityMap) : new Map<string, string>();
+      if (opts.identityMap && identityMap.size) {
+        log(`Reusing ${identityMap.size} mapped identit(ies) from ${opts.identityMap}`);
+      }
+      if (!opts.identityMap && opts.commit) {
+        logError(
+          'WARNING: --identity-map is not set. Every participant gets a freshly minted identity ' +
+            'and the old -> new mapping is discarded when this process exits, so no real user will ' +
+            'be able to open the replayed threads.',
+        );
+      }
+
+      try {
+        await migrateApply({
+          connectionString: cs,
+          sourceStream,
+          targetResourceGuid,
+          commit: !!opts.commit,
+          identityMap,
+        });
+      } finally {
+        // Persist even on failure: identities minted before the crash are real
+        // and a re-run must reuse them rather than mint a second orphaned set.
+        if (opts.identityMap && identityMap.size) {
+          writeIdentityMap(opts.identityMap, identityMap);
+          log(`Wrote ${identityMap.size} identity mapping(s) to ${opts.identityMap}`);
+        }
+      }
     } catch (e) {
       logError(e instanceof Error ? e.message : String(e));
       process.exit(2);
+    } finally {
+      if (db) {
+        await db.end().catch(() => undefined);
+      }
     }
   });
 
 migrate
   .command('plan')
-  .description('plan — not implemented yet.')
-  .action(() => {
-    logError('migrate plan is not implemented in 0.1.0.');
-    process.exit(2);
+  .description('Inspect a dump and flag gaps before you replay. Read-only.')
+  .option('--from-jsonl <path>', 'JSONL extract to inspect')
+  .option('--from-mirror', 'inspect the Postgres mirror instead of a JSONL file')
+  .option('--json', 'print the plan as JSON')
+  .action(async (opts: { fromJsonl?: string; fromMirror?: boolean; json?: boolean }) => {
+    let db: PgClient | undefined;
+    try {
+      const targetResourceGuid = acsExpectResource() ?? undefined;
+      let sourceStream: AsyncIterable<Rec>;
+      if (opts.fromJsonl) {
+        sourceStream = sourceJsonlFile(opts.fromJsonl);
+      } else if (opts.fromMirror) {
+        const dbUrl = process.env.DATABASE_URL;
+        if (!dbUrl) {
+          logError('DATABASE_URL is not set for --from-mirror');
+          process.exit(2);
+        }
+        db = await connectReadOnly(dbUrl);
+        sourceStream = sourcePostgres(db);
+      } else {
+        logError('Must specify --from-jsonl or --from-mirror');
+        process.exit(2);
+      }
+
+      const report = await migratePlan(sourceStream, targetResourceGuid);
+      if (opts.json) {
+        logJson(report);
+      } else {
+        logPlan(report, targetResourceGuid);
+      }
+    } catch (e) {
+      logError(e instanceof Error ? e.message : String(e));
+      process.exit(2);
+    } finally {
+      if (db) {
+        await db.end().catch(() => undefined);
+      }
+    }
   });
 
 program.parseAsync(process.argv).catch((e) => {
