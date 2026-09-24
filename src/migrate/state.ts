@@ -1,4 +1,4 @@
-import { closeSync, existsSync, openSync, readFileSync, writeSync } from 'node:fs';
+import { closeSync, openSync, readFileSync, writeSync } from 'node:fs';
 import { logError } from '../log.ts';
 
 /**
@@ -46,13 +46,25 @@ export class ReplayLedger {
 
   static open(path: string): ReplayLedger {
     const ledger = new ReplayLedger();
-    if (existsSync(path)) ledger.load(path);
+    // Read and handle absence, rather than asking whether the file exists and
+    // then reading it. Between those two calls the file can be created,
+    // removed or replaced, and the answer to the first is already stale by the
+    // time the second runs.
+    ledger.load(path);
     ledger.fd = openSync(path, 'a');
     return ledger;
   }
 
   private load(path: string): void {
-    const lines = readFileSync(path, 'utf8').split('\n');
+    let text: string;
+    try {
+      text = readFileSync(path, 'utf8');
+    } catch (e) {
+      // No ledger yet: this is the first run against this path.
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw e;
+    }
+    const lines = text.split('\n');
     let skipped = 0;
     for (const [i, line] of lines.entries()) {
       if (!line.trim()) continue;
