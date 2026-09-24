@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege by default. A job that needs more asks for it explicitly.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -12,8 +16,11 @@ jobs:
       matrix:
         node: [22, 24]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # Actions are pinned to commit SHAs, not tags. A tag is mutable: whoever
+      # controls the action's repo can repoint v7 at new code, and it runs here
+      # with our token. The trailing comment is the human-readable version.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ matrix.node }}
           cache: npm
@@ -40,10 +47,10 @@ jobs:
   hygiene:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: npm
@@ -72,9 +79,15 @@ jobs:
           echo "no secrets found in the tree"
 
       - name: commit messages are conventional and unattributed
+        # Through env, never interpolated into the script body. A ${{ }} inside
+        # run is substituted before the shell sees it, so anything attacker-
+        # controlled becomes shell code. It is a SHA here, but the habit is what
+        # keeps the next one from being a branch name.
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -e
-          base="${{ github.event.pull_request.base.sha }}"
+          base="$BASE_SHA"
           if [ -z "$base" ]; then base="HEAD~1"; fi
           for sha in $(git log --format='%H' "$base..HEAD"); do
             git log -1 --format='%B' "$sha" > /tmp/msg

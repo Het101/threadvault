@@ -43,3 +43,51 @@ describe('redactSecrets on connection URLs', () => {
     );
   });
 });
+
+describe('redactPhi hardening', () => {
+  it('survives a cycle instead of taking the process down with the error', async () => {
+    const { redactPhi } = await import('../src/log.ts');
+    // The shape of a real Azure SDK error: request and response point at
+    // each other, so a naive walk never terminates.
+    const request: Record<string, unknown> = { url: 'https://x.communication.azure.com' };
+    const response: Record<string, unknown> = { status: 429, request };
+    request.response = response;
+    const out = redactPhi({ error: response }) as Record<string, Record<string, unknown>>;
+    expect(out.error?.status).toBe(429);
+    expect(JSON.stringify(out)).toContain('[circular]');
+  });
+
+  it('caps depth rather than exhausting the stack', async () => {
+    const { redactPhi } = await import('../src/log.ts');
+    const root: Record<string, unknown> = {};
+    let cur = root;
+    for (let i = 0; i < 5000; i++) {
+      const next: Record<string, unknown> = {};
+      cur.n = next;
+      cur = next;
+    }
+    expect(JSON.stringify(redactPhi(root))).toContain('[truncated]');
+  });
+
+  it('keeps an Error readable, without its stack', async () => {
+    const { redactPhi } = await import('../src/log.ts');
+    const out = redactPhi({
+      error: new Error('connect failed for postgres://admin:hunter2@db:5432/app'),
+    }) as Record<string, Record<string, unknown>>;
+    expect(out.error?.name).toBe('Error');
+    expect(out.error?.message).toContain('[redacted]');
+    expect(out.error?.message).not.toContain('hunter2');
+    expect(out.error?.stack).toBeUndefined();
+  });
+
+  it('still redacts bodies at depth, and renders siblings sharing one object', async () => {
+    const { redactPhi } = await import('../src/log.ts');
+    const shared = { content: 'lorem ipsum', threadId: '19:t' };
+    const out = redactPhi({ a: shared, b: shared, deep: { x: { y: { content: 'more' } } } }) as any;
+    expect(out.a.content).toBe('[redacted]');
+    // Appearing twice side by side is not a cycle; both must render.
+    expect(out.b.content).toBe('[redacted]');
+    expect(out.b.threadId).toBe('19:t');
+    expect(out.deep.x.y.content).toBe('[redacted]');
+  });
+});

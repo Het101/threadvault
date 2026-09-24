@@ -19,18 +19,53 @@ export function redactSecrets(text: string): string {
   return text.replace(SECRET, 'accesskey=[redacted]').replace(URL_CREDENTIALS, '$1[redacted]@');
 }
 
+/**
+ * How deep to walk before giving up. Well past anything worth logging, and far
+ * short of the stack.
+ */
+const MAX_DEPTH = 12;
+
 export function redactPhi(value: unknown): unknown {
+  return redact(value, 0, new Set<object>());
+}
+
+/**
+ * `path` holds the objects between the root and here, so a genuine cycle is
+ * caught while the same object appearing twice side by side still renders.
+ *
+ * Without it this recursed forever. An Azure SDK error carries request and
+ * response objects that point back at each other, so logging one killed the
+ * process — and a logger that dies while reporting an error takes the error
+ * with it, which is the worst possible moment to fail.
+ */
+function redact(value: unknown, depth: number, path: Set<object>): unknown {
   if (value == null) return value;
   if (typeof value === 'string') return redactSecrets(value);
-  if (Array.isArray(value)) return value.map(redactPhi);
-  if (typeof value === 'object') {
+  if (typeof value !== 'object') return value;
+
+  // Errors carry their message and stack as non-enumerable properties, so the
+  // generic object walk below renders them as {}. Keep the message; leave the
+  // stack out, since frames can carry argument values.
+  if (value instanceof Error) {
+    return { name: value.name, message: redactSecrets(value.message) };
+  }
+
+  if (depth >= MAX_DEPTH) return '[truncated]';
+  if (path.has(value)) return '[circular]';
+  path.add(value);
+  try {
+    if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1, path));
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = PHI_KEYS.has(k) ? '[redacted]' : redactPhi(v);
+      // Assigning __proto__ would set this object's prototype rather than a
+      // key on it, silently dropping whatever it held from the output.
+      if (k === '__proto__') continue;
+      out[k] = PHI_KEYS.has(k) ? '[redacted]' : redact(v, depth + 1, path);
     }
     return out;
+  } finally {
+    path.delete(value);
   }
-  return value;
 }
 
 export function log(message: string, extra?: Record<string, unknown>): void {
