@@ -66,10 +66,34 @@ jobs:
           ./node_modules/.bin/threadvault migrate verify --help > /dev/null
           echo "installed bin works"
 
-      # No NODE_AUTH_TOKEN. The trusted publisher configured on npm lets this
-      # workflow authenticate over OIDC, so there is no token in a secret to
-      # leak, rotate or expire. An empty NODE_AUTH_TOKEN would actually break
-      # it: setup-node writes it into .npmrc, and npm would try that empty
-      # credential instead of falling back to OIDC.
-      - name: publish to npm
-        run: npm publish --provenance --access public
+      # Stage rather than publish. CI can prepare a release but cannot hand it
+      # to the world: a human approves it afterwards with their own 2FA. So a
+      # workflow that is ever compromised, or a malicious change merged into
+      # this file, can stage something nobody asked for and it still reaches
+      # no one. npm's trusted publisher is configured to refuse a direct
+      # publish from here, which makes that guarantee enforced rather than
+      # merely intended.
+      #
+      # No NODE_AUTH_TOKEN: the trusted publisher authenticates over OIDC, so
+      # there is no secret to leak, rotate or expire. An empty NODE_AUTH_TOKEN
+      # would actively break it — setup-node writes it into .npmrc and npm
+      # would try that empty credential instead of falling back to OIDC.
+      - name: stage the release on npm
+        run: npm stage publish --provenance --access public
+
+      - name: how to release it
+        run: |
+          {
+            echo "### Staged, not yet released"
+            echo ""
+            echo "\`$GITHUB_REF_NAME\` passed every check and is staged on npm."
+            echo "It is not installable until you approve it:"
+            echo ""
+            echo '```bash'
+            echo "npm stage list threadvault"
+            echo "npm stage view <stage-id>      # confirm it is the right build"
+            echo "npm stage approve <stage-id>   # prompts for your 2FA code"
+            echo '```'
+            echo ""
+            echo "To discard it instead: \`npm stage reject <stage-id>\`"
+          } >> "$GITHUB_STEP_SUMMARY"
