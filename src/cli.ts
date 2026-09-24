@@ -140,7 +140,21 @@ program
         acsParticipants = scan.acsParticipants;
         acsMessages = scan.acsMessages;
         acsThreadIds = scan.acsThreadIds;
-        acsScanned = true;
+        // Only true if a usable identity actually walked the resource. This
+        // was set unconditionally, so a scan that found no reader at all still
+        // counted as "I looked" — and check 5 then reported every thread in the
+        // database as missing from ACS, having never asked.
+        acsScanned = scan.readerAcsId !== null;
+
+        if (!acsScanned) {
+          logError(
+            'No usable ACS identity: every identity on record belongs to another resource, or ' +
+              'none is recorded yet. Nothing on ACS was read, so this run is inconclusive rather ' +
+              'than clean. Point threadvault.yml at your own tables, or pass --no-acs to audit ' +
+              'the database alone.',
+          );
+          process.exit(2);
+        }
         if (!wantJson && scan.unreadable) {
           log(`  ${scan.unreadable} thread(s) unreadable with the chosen identity`);
         }

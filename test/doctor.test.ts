@@ -138,3 +138,32 @@ describe('report', () => {
     expect(exitCode(null, true)).toBe(2);
   });
 });
+
+describe('a scan that never happened is not a clean bill of health', () => {
+  const threads = [
+    { ourThreadId: 't1', externalId: '19:a@thread.v2' },
+    { ourThreadId: 't2', externalId: '19:b@thread.v2' },
+  ];
+  const base = {
+    resourceGuid: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+    users: [],
+    threads,
+    acsParticipants: new Map<string, string[]>(),
+    acsMessages: [],
+    acsThreadIds: new Set<string>(),
+  };
+
+  it('does not accuse every thread of being missing when ACS was never read', () => {
+    // The state after a backfill with no identities recorded: threads in the
+    // mirror, nobody to read ACS as. Claiming the scan happened turns an empty
+    // result into "none of your threads exist", which is the opposite of true.
+    const honest = runChecks({ ...base, acsScanned: false });
+    const splitBrain = honest.filter((f) => f.check === 5);
+    expect(splitBrain).toEqual([]);
+  });
+
+  it('still reports split-brain when a scan really did happen', () => {
+    const scanned = runChecks({ ...base, acsScanned: true });
+    expect(scanned.filter((f) => f.check === 5)).toHaveLength(2);
+  });
+});
