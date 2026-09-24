@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
+## [0.2.4] - 2026-09-24
+
+Documentation only, but the README is a shipped artifact: npm snapshots it at
+publish time, so a correction to it needs a release to reach anyone.
+
+### Documentation
+
+- `doctor` and `migrate verify` were listed as writing nothing at all. Both mint
+  a throwaway ACS identity and delete it, because ACS offers no other way to
+  learn which resource a connection string belongs to. Neither reads a message
+  or touches a thread, participant or message — but "No — read-only" was flatly
+  untrue, and anyone in a regulated environment who checked would have been
+  right to stop trusting the rest of the table. It now says what happens, with a
+  note on why it is unavoidable and that `doctor --no-acs` skips ACS entirely.
+
 ## [0.2.3] - 2026-09-24
 
 Both fixes below were found by the first people other than the author to run
@@ -132,6 +147,7 @@ happens when you hold it wrong.
 Initial release: `probe`, `doctor`, `mirror backfill`, `migrate extract`,
 `migrate rehearse`, `migrate apply`.
 
+[0.2.4]: https://github.com/Het101/threadvault/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Het101/threadvault/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Het101/threadvault/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Het101/threadvault/compare/v0.2.0...v0.2.1
