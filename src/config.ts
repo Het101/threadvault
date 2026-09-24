@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 
@@ -53,16 +53,26 @@ export function loadConfig(configPath?: string): ThreadvaultConfig {
   const candidates = configPath
     ? [resolve(configPath)]
     : [resolve('threadvault.yml'), resolve('threadvault.yaml')];
-  const path = candidates.find((p) => existsSync(p));
-  if (!path) {
-    if (configPath) throw new Error(`config not found: ${configPath}`);
-    return {};
+  // Read each candidate and let absence fall through, rather than testing for
+  // existence first. Checking and then reading leaves a window where the file
+  // can change, and the same read has to happen either way.
+  for (const path of candidates) {
+    let text: string;
+    try {
+      text = readFileSync(path, 'utf8');
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      throw e;
+    }
+    const raw = parseYaml(text) as unknown;
+    if (raw == null) return {};
+    if (typeof raw !== 'object') throw new Error(`${path}: expected a mapping`);
+    const host = (raw as { host?: unknown }).host;
+    return { host: asMapping(host) };
   }
-  const raw = parseYaml(readFileSync(path, 'utf8')) as unknown;
-  if (raw == null) return {};
-  if (typeof raw !== 'object') throw new Error(`${path}: expected a mapping`);
-  const host = (raw as { host?: unknown }).host;
-  return { host: asMapping(host) };
+
+  if (configPath) throw new Error(`config not found: ${configPath}`);
+  return {};
 }
 
 export function requireEnv(name: string): string {

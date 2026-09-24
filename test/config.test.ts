@@ -51,3 +51,13 @@ host:
     expect(() => loadConfig(path)).toThrow(/not a safe identifier/);
   });
 });
+
+describe('loadConfig error handling', () => {
+  it('falls through a missing file, but surfaces a real read failure', () => {
+    expect(() => loadConfig(join(tmpdir(), 'tv-no-such-config.yml'))).toThrow(/config not found/);
+
+    // A directory is not "absent" — it must not be reported as such.
+    const d = mkdtempSync(join(tmpdir(), 'tv-cfg-'));
+    expect(() => loadConfig(d)).toThrow();
+  });
+});

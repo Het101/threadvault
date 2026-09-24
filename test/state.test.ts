@@ -92,3 +92,17 @@ describe('ReplayLedger', () => {
     expect(() => l.close()).not.toThrow();
   });
 });
+
+describe('ReplayLedger.open error handling', () => {
+  it('treats a missing file as a first run, but does not swallow other errors', () => {
+    // Absent is normal and must be silent.
+    const fresh = ReplayLedger.open(join(dir, 'never-written.jsonl'));
+    expect(fresh.threads.size).toBe(0);
+    fresh.close();
+
+    // Anything else must surface. Reading a directory is the cheap stand-in
+    // for a permission or I/O failure, which must never look like "no ledger
+    // yet" — that would silently restart a replay and duplicate the estate.
+    expect(() => ReplayLedger.open(dir)).toThrow();
+  });
+});
