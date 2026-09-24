@@ -46,7 +46,7 @@ const program = new Command();
 program
   .name('threadvault')
   .description('Mirror Azure Communication Services chat into Postgres so the ACS resource is disposable.')
-  .version('0.3.0');
+  .version('0.3.1');
 
 program
   .command('probe')

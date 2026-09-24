@@ -6,6 +6,34 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
+## [0.3.1] - 2026-09-25
+
+### Security
+
+- **No install script in the published package.** The only shell-out anywhere
+  here was a `prepare` script pointing git at `.githooks`; `src/` never touches
+  `child_process` and the bundle contains none. It did nothing for anyone
+  installing the tool — `prepare` does not run on a registry install — so every
+  consumer carried an install-time `execSync` in the manifest, which is the
+  shape a supply-chain scanner flags first, and none of the benefit. Hook setup
+  is now `npm run hooks`, run once. CI already enforces the same rules.
+
+### Performance
+
+- **The Azure SDK loads only when a command needs it.** Every invocation used to
+  import it, and `pg`, through a static chain — including commands that touch no
+  network. Against a 163 ms bare-node floor:
+
+  | | before | after |
+  | --- | --- | --- |
+  | `--help` | 540 ms | 127 ms |
+  | `--version` | 1055 ms | 146 ms |
+  | `migrate plan --from-jsonl` | 818 ms | 181 ms |
+
+  The build now emits chunks rather than one file. Bundling to a single file
+  resolved every `import()` at build time and hoisted it back to a static
+  import, so making the source lazy changed nothing until splitting was on.
+
 ## [0.3.0] - 2026-09-25
 
 A functional audit of every command, and the four defects it found. Each one
@@ -188,6 +216,7 @@ happens when you hold it wrong.
 Initial release: `probe`, `doctor`, `mirror backfill`, `migrate extract`,
 `migrate rehearse`, `migrate apply`.
 
+[0.3.1]: https://github.com/Het101/threadvault/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Het101/threadvault/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/Het101/threadvault/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Het101/threadvault/compare/v0.2.2...v0.2.3
