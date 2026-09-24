@@ -11,3 +11,6 @@ acs-dump*/
 .DS_Store
 Thumbs.db
 replay*.json
+
+# Drafts kept locally, not part of the published project
+linkedin-post.md
