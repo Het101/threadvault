@@ -61,6 +61,14 @@ jobs:
             echo "::error::a database URL with a live password is present in the tree"
             exit 1
           fi
+          if git grep -nE 'npm_[A-Za-z0-9]{36}' -- . ':!package-lock.json'; then
+            echo "::error::an npm token is present in the tree"
+            exit 1
+          fi
+          if git grep -nE '_authToken[[:space:]]*=[[:space:]]*[^$][^[:space:]]{8,}' -- . ':!package-lock.json'; then
+            echo "::error::an _authToken value is present in the tree"
+            exit 1
+          fi
           echo "no secrets found in the tree"
 
       - name: commit messages are conventional and unattributed

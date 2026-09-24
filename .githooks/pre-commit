@@ -38,6 +38,16 @@ if echo "$added" | grep -qE '(postgres|postgresql)://[^:/@[:space:]]+:[A-Za-z0-9
   fail "a database URL with a live password looks like it is being committed."
 fi
 
+# An npm token. The project's .npmrc is committed, so `npm config set` aimed at
+# the wrong file puts a publish credential in a public repo. npm tokens are
+# npm_<36 chars>, or a UUID against a registry line in an .npmrc.
+if echo "$added" | grep -qE 'npm_[A-Za-z0-9]{36}'; then
+  fail "an npm token looks like it is being committed. Put it in your user ~/.npmrc, never here."
+fi
+if echo "$added" | grep -qE '_authToken[[:space:]]*=[[:space:]]*[^$][^[:space:]]{8,}'; then
+  fail "an _authToken value looks like it is being committed. Reference it as \${NPM_TOKEN} instead."
+fi
+
 # --- 2. The code has to actually work ----------------------------------------
 if echo "$staged" | grep -qE '\.(ts|json)$'; then
   echo "pre-commit: typecheck"
