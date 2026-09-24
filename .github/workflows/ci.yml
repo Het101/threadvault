@@ -17,6 +17,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
+      - run: node -v && npm -v
       - run: npm ci
       - run: npm test
       - run: npm run typecheck

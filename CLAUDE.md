@@ -8,6 +8,7 @@ Standalone CLI. Makes an Azure Communication Services chat resource disposable b
 2. **Never point this tool at a production ACS resource or production database** without explicit, per-run human approval.
 3. **Chat message bodies are PHI.** No message bodies in logs, test fixtures, issues, or commit messages. `src/log.ts` strips `content` / `text` / `html` / `body`. Keep it that way.
 4. Do not commit, push, or open a PR without explicit human review.
+5. Never add `Co-Authored-By: Claude` or `Co-Authored-By: Claude Code` to commits.
 
 ## Runtime
 

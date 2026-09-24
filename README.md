@@ -8,10 +8,12 @@ ACS identities are resource-scoped (`8:acs:<resourceGuid>_<userGuid>`). ACS has 
 npx threadvault doctor              # read-only audit — start here
 npx threadvault probe               # which resource does this connection string hit?
 npx threadvault mirror backfill     # ACS → Postgres
-npx threadvault migrate rehearse    # synthetic thread assertion test
+npx threadvault migrate extract     # ACS → JSONL
+npx threadvault migrate rehearse    # synthetic thread, four assertions, then delete
+npx threadvault migrate apply       # JSONL → new ACS resource (dry-run unless --commit)
 ```
 
-Status: **0.1.0 — `doctor`, `probe`, `mirror backfill`, and `migrate rehearse` ship.**
+Status: **0.1.0** — `doctor`, `probe`, `mirror backfill`, `migrate extract`, `migrate rehearse`, and `migrate apply` ship.
 
 ## Why this exists
 
@@ -44,7 +46,7 @@ Read-only. Talks to ACS and optionally Postgres. Writes nothing. Postgres connec
 | 2 | System-only threads | The only ACS participant is the system identity. Nobody else can reply. |
 | 3 | Misattributed messages | ACS sender is the system identity, but `metadata.originalSenderUserId` names a real user. |
 | 4 | Missing system identity | No system-user ACS identity on this resource. History is unrecoverable without it. |
-| 5 | Split-brain threads | A thread exists on ACS with no database row, or a row whose `externalId` is missing from ACS. |
+| 5 | Split-brain threads | A thread exists on ACS with no matching row, or a row whose `externalId` is missing from ACS. |
 
 ```bash
 export ACS_CONNECTION_STRING='endpoint=https://<resource>.communication.azure.com/;accesskey=<key>'
@@ -91,21 +93,51 @@ Chat message bodies are protected health information in any healthcare deploymen
 
 ## `mirror backfill`
 
-Takes an Azure Communication Services thread resource and mirrors the threads, messages, and participants into a local Postgres database. Uses SQL `ON CONFLICT DO UPDATE` so you can resume mid-run and keep up with a live stream.
+Walk ACS (or a JSONL extract) and upsert into `threadvault_*` tables. Idempotent on `external_message_id` so you can resume mid-run.
 
 ```bash
 export DATABASE_URL='postgres://...'
-npx threadvault mirror backfill --commit
+npx threadvault mirror backfill --reader-acs-id 8:acs:... --commit
+npx threadvault mirror backfill --to-jsonl dump.jsonl --reader-acs-id 8:acs:...
+npx threadvault mirror backfill --from-jsonl dump.jsonl --commit
 ```
 
-*Note: You can `--to-jsonl` and `--from-jsonl` to snapshot the dataset outside the DB.*
+`sender_user_id` is the host UUID (`metadata.originalSenderUserId`), never an ACS identity. `sent_at` is the original timestamp (`metadata.originalCreatedOn`), not ACS's replay `createdOn`.
+
+## `migrate extract`
+
+Read-only ACS walk into JSONL. Field names stay byte-compatible with existing dumps (`legacyThreadId`, `ourSenderUserId`, …) so they remain valid input to `migrate apply`.
+
+```bash
+npx threadvault migrate extract --out dump.jsonl --reader-acs-id 8:acs:...
+```
 
 ## `migrate rehearse`
 
-Rehearses the migration assertions by simulating a thread interaction with synthetic operations, validating 4 specific attributes for durability (timestamps, original senders, replying capabilities, and participant parity):
+Writes a synthetic thread to the **target** resource, asserts four durability goals, then deletes it (unless `--keep`):
+
+1. Original timestamp resolves via `resolveSentAt`
+2. Original sender resolves to the host UUID via `resolveOriginalSenderUserId`
+3. A non-system participant can `sendMessage` (the gap that let Forbidden-on-reply through)
+4. Participant count matches the source
 
 ```bash
-npx threadvault migrate rehearse --system-acs-id 8:acs:... --non-system-acs-id 8:acs:... --non-system-our-user-id u-123
+npx threadvault migrate rehearse \
+  --system-acs-id 8:acs:... \
+  --non-system-acs-id 8:acs:... \
+  --non-system-our-user-id <uuid>
+```
+
+Run this against a throwaway resource before `apply`.
+
+## `migrate apply`
+
+Replay a JSONL extract onto a new ACS resource. Always restores participants. Always writes `metadata.originalSenderUserId` and `metadata.originalCreatedOn`. Dry-run unless `--commit`. `ACS_EXPECT_RESOURCE` is required; the command refuses if the probed GUID does not match.
+
+```bash
+export ACS_EXPECT_RESOURCE='<target-resource-guid>'
+npx threadvault migrate apply --from-jsonl dump.jsonl            # dry-run
+npx threadvault migrate apply --from-jsonl dump.jsonl --commit  # write
 ```
 
 ## Writes

@@ -17,6 +17,7 @@ import { scanAcs } from './doctor/scan.ts';
 import { mirrorBackfill } from './mirror/backfill.ts';
 import { migrateRehearse } from './migrate/rehearse.ts';
 import { migrateApply } from './migrate/apply.ts';
+import { migrateExtract } from './migrate/extract.ts';
 import { sourceJsonlFile } from './mirror/source-jsonl.ts';
 import { applySchema } from './db/migrate.ts';
 import { log, logError } from './log.ts';
@@ -242,11 +243,39 @@ migrate
   });
 
 migrate
+  .command('extract')
+  .description('Walk ACS and write a JSONL extract. Read-only.')
+  .requiredOption('--out <path>', 'JSONL output path')
+  .option('--reader-acs-id <id>', 'ACS identity to read as')
+  .action(async (opts: { out: string; readerAcsId?: string }) => {
+    try {
+      const cs = acsConnectionString();
+      if (!cs) {
+        logError('ACS_CONNECTION_STRING is not set');
+        process.exit(2);
+      }
+      if (!opts.readerAcsId) {
+        logError('--reader-acs-id is required');
+        process.exit(2);
+      }
+      await migrateExtract({
+        connectionString: cs,
+        readerAcsId: opts.readerAcsId,
+        outPath: opts.out,
+      });
+    } catch (e) {
+      logError(e instanceof Error ? e.message : String(e));
+      process.exit(2);
+    }
+  });
+
+migrate
   .command('apply')
   .description('Replay threads, participants, and messages onto the target ACS resource.')
   .option('--from-jsonl <path>', 'path to JSONL extract')
   .option('--from-mirror', 'read from Postgres mirror')
-  .action(async (opts: { fromJsonl?: string; fromMirror?: boolean }) => {
+  .option('--commit', 'must be passed to write to ACS (otherwise dry-run)')
+  .action(async (opts: { fromJsonl?: string; fromMirror?: boolean; commit?: boolean }) => {
     try {
       const targetResourceGuid = acsExpectResource();
       if (!targetResourceGuid) {
@@ -275,6 +304,7 @@ migrate
         connectionString: cs,
         sourceStream,
         targetResourceGuid,
+        commit: !!opts.commit,
       });
     } catch (e) {
       logError(e instanceof Error ? e.message : String(e));
@@ -282,15 +312,13 @@ migrate
     }
   });
 
-for (const name of ['extract', 'plan'] as const) {
-  migrate
-    .command(name)
-    .description(`${name} — not implemented yet. doctor ships first.`)
-    .action(() => {
-      logError(`migrate ${name} is not implemented in 0.1.0 — doctor ships first.`);
-      process.exit(2);
-    });
-}
+migrate
+  .command('plan')
+  .description('plan — not implemented yet.')
+  .action(() => {
+    logError('migrate plan is not implemented in 0.1.0.');
+    process.exit(2);
+  });
 
 program.parseAsync(process.argv).catch((e) => {
   logError(e instanceof Error ? e.message : String(e));
