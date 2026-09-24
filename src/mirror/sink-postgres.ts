@@ -27,7 +27,7 @@ export async function sinkPostgres(
   stream: AsyncIterable<Rec>,
   db: PgClient,
 ): Promise<{ threads: number; participants: number; messages: number }> {
-  let stats = { threads: 0, participants: 0, messages: 0 };
+  const stats = { threads: 0, participants: 0, messages: 0 };
   const threadIdCache = new Map<string, string>(); // legacy external id -> threadvault uuid
   const userAcsCache = new Map<string, string>(); // ACS id -> threadvault uuid
 

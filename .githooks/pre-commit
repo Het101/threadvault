@@ -50,6 +50,9 @@ fi
 
 # --- 2. The code has to actually work ----------------------------------------
 if echo "$staged" | grep -qE '\.(ts|json)$'; then
+  echo "pre-commit: lint"
+  npm run --silent lint
+
   echo "pre-commit: typecheck"
   npm run --silent typecheck
 

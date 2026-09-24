@@ -23,6 +23,8 @@ To *develop* it you want **Node 22.12 or newer**: the test toolchain pulls Vite 
 ```bash
 npm run dev -- doctor --help   # run from source, no build step
 npm test                       # vitest
+npm run lint                   # eslint, type-aware
+npm run lint:fix               # and fix what it can
 npm run typecheck              # tsc --noEmit
 npm run build                  # tsup -> dist/
 ```
@@ -31,7 +33,7 @@ npm run build                  # tsup -> dist/
 
 ## What the hooks do
 
-**pre-commit** blocks a commit that carries a live ACS access key, a database URL with a real password, or a `.env` file, then runs typecheck and tests if any TypeScript changed. **commit-msg** requires a [Conventional Commit](https://www.conventionalcommits.org/) subject under 72 characters.
+**pre-commit** blocks a commit that carries a live ACS access key, a database URL with a real password, an npm token, or a `.env` file, then runs lint, typecheck and tests if any TypeScript changed. **commit-msg** requires a [Conventional Commit](https://www.conventionalcommits.org/) subject under 72 characters.
 
 `--no-verify` exists, but CI runs the same checks, so it only moves the failure later.
 

@@ -1,6 +1,6 @@
 import { createAcs } from '../acs/client.ts';
+import { listParticipantIds } from '../acs/read.ts';
 import { log } from '../log.ts';
-import type { Rec } from '../mirror/types.ts';
 import { resolveSentAt, resolveOriginalSenderUserId } from '../acs/identity.ts';
 
 /**
@@ -25,7 +25,6 @@ export async function migrateRehearse(opts: {
   const threadId = threadRes.chatThread?.id;
   if (!threadId) throw new Error('Failed to create rehearsal thread');
 
-  let success = false;
   try {
     // Add participant
     const tc = sysChat.getChatThreadClient(threadId);
@@ -37,10 +36,7 @@ export async function migrateRehearse(opts: {
     });
 
     // Check assertion 4: participant count
-    let pCount = 0;
-    for await (const p of tc.listParticipants()) {
-      pCount++;
-    }
+    const pCount = (await listParticipantIds(tc)).length;
     if (pCount !== 2) {
       throw new Error(`Assertion 4 failed: expected 2 participants, found ${pCount}`);
     }
@@ -82,7 +78,6 @@ export async function migrateRehearse(opts: {
       content: 'I can reply!'
     });
 
-    success = true;
     log('rehearse: all 4 assertions passed.');
   } finally {
     if (!opts.keep && threadId) {
@@ -91,9 +86,5 @@ export async function migrateRehearse(opts: {
     } else if (threadId) {
       log(`rehearse: kept thread ${threadId}`);
     }
-  }
-
-  if (!success) {
-    throw new Error('Rehearsal failed.');
   }
 }

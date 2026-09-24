@@ -242,9 +242,9 @@ migrate
       log('Starting rehearse...');
       await migrateRehearse({
         connectionString: cs,
-        systemAcsId: opts.systemAcsId!,
-        nonSystemAcsId: opts.nonSystemAcsId!,
-        nonSystemOurUserId: opts.nonSystemOurUserId!,
+        systemAcsId: opts.systemAcsId,
+        nonSystemAcsId: opts.nonSystemAcsId,
+        nonSystemOurUserId: opts.nonSystemOurUserId,
         keep: opts.keep,
       });
     } catch (e) {
