@@ -6,6 +6,41 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
+## [0.2.3] - 2026-09-24
+
+Both fixes below were found by the first people other than the author to run
+this. Neither was reachable from the tests, because both were about what
+happens when you hold it wrong.
+
+### Fixed
+
+- **`migrate rehearse` wrote to ACS without checking the resource.** It creates
+  a thread, adds participants, sends messages and deletes a thread, and it
+  checked neither `ACS_EXPECT_RESOURCE` nor the probed GUID — while the README,
+  `SECURITY.md` and the agent notes all stated that guard covers *any* ACS
+  write. The one command whose purpose is "try this safely first" was the one
+  that would happily do it against production. It now takes the same guard as
+  `migrate apply`.
+- **`probe` exited `0` after failing to probe.** The "could not read the GUID"
+  branch came last, so a failed probe with `ACS_EXPECT_RESOURCE` unset printed
+  `Target resource GUID is ?` and reported success. Anything scripting it would
+  have concluded the resource was fine.
+- **An unusable connection string now says why.** The Azure SDK answers
+  `Invalid connection string <the string>`, which is true and useless. The
+  actual cause is almost always a shell: an unquoted
+  `export ACS_CONNECTION_STRING=endpoint=...;accesskey=...` ends at the `;` and
+  drops the key silently. Checked before the SDK sees it, and named.
+
+### Documentation
+
+- A per-command table of which environment variables each command needs, and a
+  troubleshooting section built from what has actually gone wrong for people:
+  `npm threadvault` versus `npx threadvault`, the quoting trap, `INCONCLUSIVE`,
+  and `Forbidden` on reply.
+- `.env.example` listed `ACS_OLD_CONNECTION_STRING` and `THREADVAULT_STATE`.
+  Nothing reads either; the replay ledger is a flag, not a variable. Every entry
+  is now cross-checked against actual `process.env` usage.
+
 ## [0.2.2] - 2026-09-24
 
 ### Fixed
@@ -97,6 +132,7 @@ changes may land in a minor release; they are always called out below.
 Initial release: `probe`, `doctor`, `mirror backfill`, `migrate extract`,
 `migrate rehearse`, `migrate apply`.
 
+[0.2.3]: https://github.com/Het101/threadvault/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Het101/threadvault/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Het101/threadvault/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Het101/threadvault/compare/v0.1.0...v0.2.0
