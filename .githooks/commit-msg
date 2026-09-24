@@ -5,6 +5,12 @@ set -e
 msg_file="$1"
 subject=$(head -1 "$msg_file")
 
+# GitHub appends " (#123)" to a squash-merge subject. The author never typed
+# those characters and cannot shorten them, so measuring them is measuring the
+# wrong thing — and it means a subject that passed this hook locally fails the
+# same check in CI once it has been squashed. Judge what the author wrote.
+authored=$(printf '%s' "$subject" | sed -E 's/ \(#[0-9]+\)$//')
+
 # Merge and revert commits are generated; leave them alone.
 case "$subject" in
   "Merge "*|"Revert "*|"fixup!"*|"squash!"*) exit 0 ;;
@@ -33,10 +39,11 @@ if ! echo "$subject" \
   exit 1
 fi
 
-if [ "${#subject}" -gt 72 ]; then
+if [ "${#authored}" -gt 72 ]; then
   echo "" >&2
-  echo "commit-msg: subject is ${#subject} characters; keep it under 72." >&2
+  echo "commit-msg: subject is ${#authored} characters; keep it under 72." >&2
   echo "  Put the detail in the body, which has no limit." >&2
+  echo "  Note that squashing a pull request appends \" (#123)\" to this line." >&2
   echo "" >&2
   exit 1
 fi
