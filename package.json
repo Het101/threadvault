@@ -25,7 +25,6 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
     "hooks": "git config core.hooksPath .githooks",
-    "prepare": "node -e \"const f=require('fs');if(f.existsSync('.githooks')){try{require('child_process').execSync('git config core.hooksPath .githooks')}catch(e){}}\"",
     "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run build"
   },
   "repository": {

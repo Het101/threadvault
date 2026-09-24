@@ -13,8 +13,16 @@ Thanks for looking. Threadvault came out of a production incident, and the rules
 ```bash
 git clone https://github.com/Het101/threadvault.git
 cd threadvault
-npm install          # also installs the git hooks
+npm install
+npm run hooks        # one-off: points git at .githooks
 ```
+
+`npm run hooks` is a deliberate, explicit step rather than an `npm install`
+side effect. A `prepare` script would wire it up automatically, but it would
+also mean the published package advertises an install-time script that shells
+out — the exact shape supply-chain scanners flag, on a tool that asks to be
+trusted with production credentials. CI enforces everything the hooks enforce,
+so nothing is lost by making this a step you take on purpose.
 
 Node **22 or newer** to run Threadvault — the Azure SDK will not install on 20.
 
@@ -29,7 +37,9 @@ npm run typecheck              # tsc --noEmit
 npm run build                  # tsup -> dist/
 ```
 
-`npm install` runs `git config core.hooksPath .githooks` for you. If you cloned before that existed, run `npm run hooks` once.
+If you skip `npm run hooks`, nothing breaks locally — but CI runs the same
+secret scan, commit-message rules and signature check, so anything the hooks
+would have caught is caught before merge instead of before commit.
 
 ## Signing
 
