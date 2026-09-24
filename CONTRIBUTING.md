@@ -117,13 +117,29 @@ Maintainers only.
 3. Commit, then `git tag -a vX.Y.Z -m "threadvault X.Y.Z"` and
    `git push origin main --follow-tags`.
 
-The tag triggers `.github/workflows/release.yml`, which refuses to publish if
-the tag and `package.json` disagree, runs typecheck, tests and build, installs
-the packed tarball into an empty directory and runs the binary, and only then
-publishes with npm provenance.
+The tag triggers `.github/workflows/release.yml`, which refuses to continue if
+the tag and `package.json` disagree, runs lint, typecheck, tests and build,
+installs the packed tarball into an empty directory and runs the binary, and
+only then **stages** the release with npm provenance.
 
-It authenticates to npm over OIDC through a trusted publisher, so there is no
-`NPM_TOKEN` secret and nothing to rotate. npm verifies the publish really came
+4. Approve it. Staging is not releasing — nothing is installable yet:
+
+```bash
+npm stage list threadvault
+npm stage view <stage-id>      # confirm it is the build you expect
+npm stage approve <stage-id>   # prompts for your 2FA code
+```
+
+The workflow prints these commands in its job summary. To throw the build away
+instead: `npm stage reject <stage-id>`.
+
+CI deliberately cannot publish. npm's trusted publisher for this repository
+permits staging only, so a workflow that is ever compromised — or a malicious
+change merged into `release.yml` — can stage something and it still reaches
+nobody. A human with their own 2FA is the last gate.
+
+Authentication is OIDC through that trusted publisher, so there is no
+`NPM_TOKEN` secret and nothing to rotate. npm verifies the build really came
 from this repository, from `release.yml`, at that commit.
 
 ## Where things live
