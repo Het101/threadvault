@@ -46,6 +46,40 @@ export type ApplyStats = {
   messagesAlreadySent: number;
 };
 
+/**
+ * What one person is called in the ledger.
+ *
+ * Our own UUID where we have it, because that is the identifier that survives
+ * a resource change — the ACS id is the thing that does not. Keying on the ACS
+ * id means somebody who was re-minted at some point arrives on the new resource
+ * as two different people, which is the misattribution this tool exists to
+ * prevent. Falls back to the ACS id for a JSONL extract, which carries no UUID.
+ */
+function identityKey(ourUserId: string | null, acsId: string): string {
+  const ours = ourUserId?.trim();
+  return ours ? ours : acsId;
+}
+
+/**
+ * The target identity to send a message as.
+ *
+ * Tries our UUID first: `sourcePostgres` deliberately emits a null senderAcsId,
+ * so a mirror replay resolved by ACS id alone would find nobody and send every
+ * message as the migrator — exactly the wrong-author defect `doctor` check 3
+ * reports.
+ */
+function senderIdentity(
+  ledger: ReplayLedger,
+  rec: Extract<Rec, { kind: 'message' }>,
+): string | null {
+  const ours = rec.ourSenderUserId?.trim() || resolveOriginalSenderUserId({ metadata: rec.metadata });
+  if (ours) {
+    const hit = ledger.identities.get(ours);
+    if (hit) return hit;
+  }
+  return rec.senderAcsId ? ledger.identities.get(rec.senderAcsId) ?? null : null;
+}
+
 function replayMetadata(rec: Extract<Rec, { kind: 'message' }>): Record<string, string> {
   const meta: Record<string, string> = rec.metadata ? { ...rec.metadata } : {};
   const ourSender = rec.ourSenderUserId || resolveOriginalSenderUserId({ metadata: rec.metadata });
@@ -119,11 +153,11 @@ export async function migrateApply(opts: ApplyOpts): Promise<ApplyStats> {
   const migratorId = migrator.communicationUserId;
   const migratorChat = await acs.chatFor(migratorId);
 
-  const getOrMintIdentity = async (oldAcsId: string): Promise<string> => {
-    const hit = ledger.identities.get(oldAcsId);
+  const getOrMintIdentity = async (key: string): Promise<string> => {
+    const hit = ledger.identities.get(key);
     if (hit) return hit;
-    const u = await withRetry(`createUser ${oldAcsId}`, () => acs.identity.createUser());
-    ledger.recordIdentity(oldAcsId, u.communicationUserId);
+    const u = await withRetry(`createUser ${key}`, () => acs.identity.createUser());
+    ledger.recordIdentity(key, u.communicationUserId);
     stats.identitiesMinted++;
     return u.communicationUserId;
   };
@@ -235,7 +269,7 @@ export async function migrateApply(opts: ApplyOpts): Promise<ApplyStats> {
         if (!currentLegacyThreadId && ledger.threads.has(rec.legacyThreadId)) {
           currentLegacyThreadId = rec.legacyThreadId;
         }
-        const newAcsId = await getOrMintIdentity(rec.acsId);
+        const newAcsId = await getOrMintIdentity(identityKey(rec.ourUserId, rec.acsId));
         bufferParticipants.push({
           id: { communicationUserId: newAcsId },
           displayName: rec.displayName || undefined,
@@ -256,7 +290,7 @@ export async function migrateApply(opts: ApplyOpts): Promise<ApplyStats> {
           content: rec.content ?? '',
           senderDisplayName: rec.senderDisplayName || undefined,
           metadata: replayMetadata(rec),
-          senderAcsId: rec.senderAcsId ? ledger.identities.get(rec.senderAcsId) ?? null : null,
+          senderAcsId: senderIdentity(ledger, rec),
         });
       }
     }

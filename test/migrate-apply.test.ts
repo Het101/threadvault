@@ -7,6 +7,7 @@ const createdUsers: string[] = [];
 const createdThreads: Array<{ topic: string }> = [];
 const addedParticipants: Array<{ id: { communicationUserId: string }; displayName?: string }> = [];
 const sentMessages: Array<{ content: string; metadata?: Record<string, string> }> = [];
+const chatForCalls: string[] = [];
 
 vi.mock('../src/acs/client.ts', () => {
   return {
@@ -26,7 +27,9 @@ vi.mock('../src/acs/client.ts', () => {
           }),
           deleteUser: vi.fn().mockResolvedValue(undefined),
         },
-        chatFor: vi.fn().mockResolvedValue({
+        chatFor: vi.fn().mockImplementation((acsId: string) => {
+          chatForCalls.push(acsId);
+          return Promise.resolve({
           createChatThread: vi.fn().mockImplementation(async (body: { topic: string }) => {
             createdThreads.push(body);
             return { chatThread: { id: `thread-${createdThreads.length}` } };
@@ -40,6 +43,7 @@ vi.mock('../src/acs/client.ts', () => {
               return { id: `msg-${sentMessages.length}` };
             }),
           }),
+          });
         }),
       };
     }),
@@ -181,8 +185,9 @@ describe('migrateApply regressions', () => {
 
   it('reuses a supplied identity map instead of minting a rival set', async () => {
     const ledger = ReplayLedger.ephemeral();
-    ledger.recordIdentity('8:acs:old_sys', '8:acs:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa_kept-sys');
-    ledger.recordIdentity('8:acs:old_user', '8:acs:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa_kept-user');
+    // Keyed on our own UUIDs, which is what survives a resource change.
+    ledger.recordIdentity('u-sys', '8:acs:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa_kept-sys');
+    ledger.recordIdentity('u-user', '8:acs:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa_kept-user');
     const stats = await migrateApply({
       connectionString: 'endpoint=https://mock.communication.azure.com/;accesskey=mock',
       sourceStream: recs(fixture),
@@ -206,7 +211,8 @@ describe('migrateApply regressions', () => {
       commit: true,
       ledger,
     });
-    expect([...ledger.identities.keys()].sort()).toEqual(['8:acs:old_sys', '8:acs:old_user']);
+    // Our UUIDs, not the ACS ids they happened to hold on the old resource.
+    expect([...ledger.identities.keys()].sort()).toEqual(['u-sys', 'u-user']);
   });
 
   it('does not count participants or messages for a thread that failed to create', async () => {
@@ -309,5 +315,95 @@ describe('migrateApply resume', () => {
     });
     expect(stats).toMatchObject({ threads: 0, threadsResumed: 1, messages: 0, participants: 0 });
     expect(stats.messagesAlreadySent).toBe(1);
+  });
+});
+
+describe('migrateApply identity mapping', () => {
+  beforeEach(() => {
+    createdUsers.length = 0;
+    createdThreads.length = 0;
+    addedParticipants.length = 0;
+    sentMessages.length = 0;
+    chatForCalls.length = 0;
+  });
+
+  it('mints one identity per person, not one per stale ACS id they ever had', async () => {
+    // The same human, carrying two different ACS ids because an earlier
+    // resource move re-minted them. Keying on the ACS id makes them two
+    // people on the new resource, which is the bug this tool exists to stop.
+    const sameUserTwice: Rec[] = [
+      fixture[0]!,
+      {
+        kind: 'participant',
+        legacyThreadId: '19:old@thread.v2',
+        acsId: '8:acs:old-resource-a_alice',
+        displayName: 'Alice',
+        ourUserId: 'u-alice',
+      },
+      {
+        kind: 'participant',
+        legacyThreadId: '19:old@thread.v2',
+        acsId: '8:acs:old-resource-b_alice',
+        displayName: 'Alice',
+        ourUserId: 'u-alice',
+      },
+    ];
+    const ledger = ReplayLedger.ephemeral();
+    const stats = await migrateApply({
+      connectionString: 'endpoint=https://mock.communication.azure.com/;accesskey=mock',
+      sourceStream: recs(sameUserTwice),
+      targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      commit: true,
+      ledger,
+    });
+    expect(stats.identitiesMinted).toBe(1);
+    const ids = new Set(addedParticipants.map((p) => p.id.communicationUserId));
+    expect(ids.size).toBe(1);
+  });
+
+  it('attributes messages when replaying from the mirror, where senderAcsId is null', async () => {
+    // sourcePostgres deliberately emits senderAcsId: null — that field names an
+    // identity on a resource that may not exist. Attribution travels as
+    // ourSenderUserId, so apply has to resolve the sender from that.
+    const fromMirror: Rec[] = [
+      fixture[0]!,
+      {
+        kind: 'participant',
+        legacyThreadId: '19:old@thread.v2',
+        acsId: '8:acs:old_alice',
+        displayName: 'Alice',
+        ourUserId: 'u-alice',
+      },
+      {
+        kind: 'message',
+        legacyThreadId: '19:old@thread.v2',
+        messageId: 'm-1',
+        type: 'text',
+        sequenceId: '1',
+        content: 'lorem ipsum',
+        senderAcsId: null,
+        senderDisplayName: 'Alice',
+        ourSenderUserId: 'u-alice',
+        createdOn: '2022-01-01T12:00:00.000Z',
+        editedOn: null,
+        deletedOn: null,
+        metadata: null,
+      },
+    ];
+    const ledger = ReplayLedger.ephemeral();
+    await migrateApply({
+      connectionString: 'endpoint=https://mock.communication.azure.com/;accesskey=mock',
+      sourceStream: recs(fromMirror),
+      targetResourceGuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      commit: true,
+      ledger,
+    });
+
+    const alice = ledger.identities.get('u-alice');
+    expect(alice).toBeTruthy();
+    // The message must go out AS Alice, not as the migrator — otherwise every
+    // replayed message shows the wrong author, which is doctor's check 3.
+    expect(chatForCalls).toContain(alice);
+    expect(sentMessages[0]?.metadata?.originalSenderUserId).toBe('u-alice');
   });
 });
