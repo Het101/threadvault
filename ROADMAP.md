@@ -10,11 +10,17 @@ with Azure Communication Services because that is where the problem bit hardest,
 but the aim is that losing a communications vendor is an inconvenience rather
 than an incident.
 
-## Now — 0.2.0
+## Done
 
-- [ ] Publish to npm, so `npx threadvault doctor` works without cloning
-- [ ] ESLint, alongside the existing typecheck and tests
+- [x] Published to npm, so `npx threadvault doctor` works without cloning
+- [x] ESLint, alongside typecheck and tests, enforced by CI and a pre-commit hook
+- [x] Releases build, verify and stage from CI; a human approves them with their
+      own 2FA, and the package carries npm provenance
+
+## Now
+
 - [ ] A recorded walkthrough of the full pipeline against a real resource
+- [ ] Get the post-mortem in front of people searching for the error it is about
 
 ## Next — 1.0
 

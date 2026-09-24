@@ -2,6 +2,7 @@
 
 **Your Azure Communication Services chat resource should be disposable. Right now it isn't.**
 
+[![npm](https://img.shields.io/npm/v/threadvault.svg)](https://www.npmjs.com/package/threadvault)
 [![CI](https://github.com/Het101/threadvault/actions/workflows/ci.yml/badge.svg)](https://github.com/Het101/threadvault/actions/workflows/ci.yml)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/Het101/threadvault/blob/main/LICENSE)
@@ -38,15 +39,21 @@ Mirror once and ACS becomes a cache. Every message lands in **your** database un
 
 ## Install
 
-Not on npm yet — install from source:
+Nothing to install — `doctor` is read-only, so it is safe to point at a resource and see what it says:
 
 ```bash
-git clone https://github.com/Het101/threadvault.git
-cd threadvault && npm install && npm run build
-npm link                        # puts `threadvault` on your PATH
+npx threadvault doctor
+```
+
+Or keep it around:
+
+```bash
+npm install -g threadvault
 ```
 
 **Node 22 or newer.** The current Azure SDK will not install on 20.
+
+Published with [npm provenance](https://www.npmjs.com/package/threadvault), so you can verify the package was built by CI from this repository rather than uploaded by hand.
 
 ## The 60-second version
 
@@ -54,9 +61,9 @@ npm link                        # puts `threadvault` on your PATH
 export ACS_CONNECTION_STRING='endpoint=https://<resource>.communication.azure.com/;accesskey=<key>'
 export DATABASE_URL='postgres://…'
 
-threadvault probe                   # which resource am I even pointing at?
-threadvault doctor                  # what is already broken?
-threadvault mirror backfill --reader-acs-id 8:acs:… --commit
+npx threadvault probe               # which resource am I even pointing at?
+npx threadvault doctor              # what is already broken?
+npx threadvault mirror backfill --reader-acs-id 8:acs:… --commit
 ```
 
 That's it. ACS is now disposable.
