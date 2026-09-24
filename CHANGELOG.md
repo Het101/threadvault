@@ -6,6 +6,47 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
+## [0.3.0] - 2026-09-25
+
+A functional audit of every command, and the four defects it found. Each one
+sat in a path the tests exercised only with data that happened to avoid it.
+
+### Fixed
+
+- **Replayed identities were keyed on the ACS id, not on your UUID.** The first
+  rule of this tool is that your UUID is the identifier and the ACS identity is
+  disposable; `migrate apply` did the opposite. Anyone re-minted at some point
+  carried two historical ACS ids and arrived on the new resource as two
+  different people. Worse, `sourcePostgres` deliberately emits a null
+  `senderAcsId`, so a mirror replay resolving senders by ACS id found nobody and
+  sent every message as the migrator — the wrong-author defect, reproduced by
+  our own Postgres path, on the workflow the README recommends.
+- **`doctor` reported a scan that never happened as clean.** `acsScanned` was
+  set whenever a walk was requested, including when no identity on record
+  belonged to the resource and nothing was read. With threads in the mirror,
+  check 5 then reported every one of them as missing from ACS, having never
+  asked; with an empty mirror it printed `clean — no findings` and exited 0. A
+  run that could not look now says so and exits 2.
+- **Nothing ever wrote `threadvault_identities`.** The table was read by the
+  mirror and by `doctor`, and populated by nothing, so the mirror could never
+  map an ACS id back to a person and `doctor` had nobody to check without a
+  `threadvault.yml` mapping. `mirror backfill` now records each participant's
+  identity, taking the resource GUID from the ACS id.
+- **A second backfill could not repair attribution.** The message upsert
+  refreshed content and the edit and delete stamps only, so a mirror taken
+  before identities were known kept its null `sender_user_id` forever. Repair is
+  the reason to run it twice.
+
+### Changed
+
+- **Breaking, in practice only for an unused file:** a `--state` ledger written
+  by an earlier version keys identities on ACS ids and will not match. Delete it
+  and let the next run rebuild, or the replay will mint a second set. No
+  published version has successfully completed a real replay, so this is
+  expected to affect nobody.
+- `mirror backfill` reports an identities count alongside threads, participants
+  and messages.
+
 ## [0.2.4] - 2026-09-24
 
 Documentation only, but the README is a shipped artifact: npm snapshots it at
@@ -147,6 +188,7 @@ happens when you hold it wrong.
 Initial release: `probe`, `doctor`, `mirror backfill`, `migrate extract`,
 `migrate rehearse`, `migrate apply`.
 
+[0.3.0]: https://github.com/Het101/threadvault/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/Het101/threadvault/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Het101/threadvault/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Het101/threadvault/compare/v0.2.1...v0.2.2
