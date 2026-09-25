@@ -38,25 +38,19 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: 22
+          # 24, not 22, only because it ships npm 11.19: trusted publishing
+          # needs 11.5.1 or newer, and Node 22 ships npm 10. Installing a
+          # newer npm inside the job that holds the publishing identity was
+          # an extra unpinned input for no reason. tsup targets node22, so
+          # the artifact is identical, and ci builds and smoke-tests on 22
+          # for every commit.
+          node-version: 24
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
           # Caching is off on purpose. The Actions cache is writable by
           # workflows with fewer permissions than this one, and this is the
           # job that publishes. Restoring their entries here would let a PR
           # run influence a signed release.
-
-      # Node 22 ships npm 10, which has no OIDC support. Trusted publishing
-      # needs npm 11.5.1 or newer, so without this the publish step falls back
-      # to looking for a token that no longer exists.
-      # Pinned, not `@latest`: this job holds the OIDC identity that can publish
-      # to npm, so the package manager it runs is a supply-chain input like any
-      # other. Bump deliberately; nothing automated watches this line.
-      - name: npm new enough for trusted publishing
-        run: |
-          set -e
-          npm install -g npm@12.1.0
-          npm --version
 
       - run: npm ci
 
