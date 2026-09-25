@@ -22,6 +22,16 @@ jobs:
       actions: read
       contents: read
     steps:
+      # First step on purpose, so it sees every step after it. Watches what
+      # this job talks to over the network: everything else in this repo checks
+      # code before it runs, and this is the only thing that notices a
+      # dependency misbehaving while it runs — the shape every recent npm
+      # compromise has taken. Audit mode records destinations without blocking,
+      # which is what an allowlist for block mode has to be built from.
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
