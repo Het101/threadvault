@@ -6,6 +6,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
+## [Unreleased]
+
+### Added
+
+- **`migrate extract --no-bodies`.** Message bodies are the only thing this
+  tool ever writes to disk that the source database would call sensitive.
+  `doctor` already discards them at the SDK boundary and `plan` and `verify`
+  never read them, so `extract` was the single reason the read-and-analyse
+  path could not be pointed at a resource whose contents are not allowed to
+  leave it. With the flag the extract carries every thread, participant,
+  identity, timestamp and attribution field and no message text, which is
+  everything `plan` and `verify` need.
+
+  `migrate apply` refuses such a dump - during the dry run, before `--commit`
+  is reached, because the dry run is what you run first. Replaying one would
+  post an empty message for each real one, in the right thread, from the right
+  person, at the right time: convincing, and not recoverable without
+  re-extracting.
+
+- **[A runbook for the first run against a real resource](docs/first-real-run.md).**
+  Ordered so stages 1-5 cannot write to ACS at all, and says which numbers in
+  the plan report must be zero and what a non-zero one means.
+
 ## [0.4.0] - 2026-09-25
 
 No behaviour changes. This release raises the minimum Node version and rebuilds

@@ -12,6 +12,16 @@ export type ExtractOpts = {
   threadIds?: string[];
   /** Threads walked at once. Messages inside a thread always stay serial. */
   concurrency?: number;
+  /**
+   * Leave message bodies out of the extract entirely.
+   *
+   * Bodies are the only PHI this tool writes to disk. Without them the
+   * extract still carries every thread, participant, identity, timestamp and
+   * attribution field, which is everything `migrate plan` and `migrate
+   * verify` read - so the analysis can run against a resource whose contents
+   * are not allowed to leave it. `migrate apply` refuses such a dump.
+   */
+  withoutBodies?: boolean;
 };
 
 function toIso(value: Date | string | undefined | null): string | null {
@@ -104,7 +114,7 @@ export async function* extractAcs(
           messageId: m.id,
           type: m.type,
           sequenceId: m.sequenceId,
-          content: m.content?.message || null,
+          content: opts.withoutBodies ? null : m.content?.message || null,
           senderAcsId: asCommunicationUserId(m.sender),
           senderDisplayName: m.senderDisplayName || null,
           ourSenderUserId: m.metadata?.originalSenderUserId || null,
@@ -112,6 +122,7 @@ export async function* extractAcs(
           editedOn: toIso(m.editedOn),
           deletedOn: toIso(m.deletedOn),
           metadata: m.metadata || null,
+          ...(opts.withoutBodies ? { bodiesOmitted: true as const } : {}),
         });
       }
     } catch (e) {
