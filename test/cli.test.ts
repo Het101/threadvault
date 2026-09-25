@@ -34,6 +34,38 @@ vi.mock('../src/log.ts', async (orig) => {
   };
 });
 
+/**
+ * A Postgres that answers whichever shape doctor asks in.
+ *
+ * doctor reads the host tables when a threadvault.yml is present and the
+ * mirror tables when it is not — so a test that handled only one shape would
+ * pass or fail depending on whether the developer running it happens to have a
+ * config in their working directory. It handles both, deliberately.
+ */
+vi.mock('../src/db/pg.ts', () => ({
+  connectReadOnly: vi.fn().mockImplementation(() =>
+    Promise.resolve({
+      query: vi.fn().mockImplementation((sql: string) => {
+        if (sql.includes('to_regclass')) return Promise.resolve({ rows: [{ reg: 'x' }] });
+
+        // One system identity on this resource, by either route.
+        if (sql.includes('threadvault_identities')) {
+          return Promise.resolve({ rows: [{ our_user_id: 'sys', acs_id: SYS, is_system: true }] });
+        }
+        if (sql.includes('AS acs')) {
+          return Promise.resolve({ rows: [{ id: 'sys', acs: SYS, sys: true }] });
+        }
+
+        // No threads on record either way, while ACS lists one. That is the
+        // split brain this test wants reported.
+        return Promise.resolve({ rows: [] });
+      }),
+      end: vi.fn().mockResolvedValue(undefined),
+    }),
+  ),
+  connect: vi.fn(),
+  qid: (n: string) => `"${n}"`,
+}));
 vi.mock('../src/acs/client.ts', () => ({
   probeResource: vi.fn().mockResolvedValue({ host: 'mock.communication.azure.com', guid: RESOURCE }),
   parseEndpoint: () => 'https://mock.communication.azure.com',
@@ -88,8 +120,15 @@ async function run(...argv: string[]): Promise<{ out: string; err: string; code:
   out.length = 0;
   errs.length = 0;
   let code = 0;
+  let exited = false;
+  // The real process.exit never returns, so the first call is the one that
+  // counts. Recording later calls instead would report cli.ts's own catch
+  // block swallowing this signal and exiting 2 over the code it meant.
   const exit = vi.spyOn(process, 'exit').mockImplementation(((c?: number) => {
-    code = c ?? 0;
+    if (!exited) {
+      exited = true;
+      code = c ?? 0;
+    }
     throw new ExitSignal();
   }) as never);
   try {
@@ -230,6 +269,49 @@ describe('a command that cannot run says why, and exits 2', () => {
     const r = await run('doctor');
     expect(r.code).toBe(2);
     expect(r.err).toContain('inconclusive');
+  });
+});
+
+/**
+ * doctor end to end: database in, ACS walked, report out. The remediation
+ * section was added after the last run against a real resource, so this is what
+ * stands in for that run — it drives the whole command rather than the
+ * formatter alone.
+ */
+describe('doctor produces a full report', () => {
+  beforeEach(() => {
+    process.env.DATABASE_URL = 'postgresql://u:p@localhost:5432/db';
+  });
+
+  it('reports the split brain it found, and what to do about it', async () => {
+    const r = await run('doctor');
+
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('[5] split-brain-threads');
+    expect(r.out).toContain('has no matching database row');
+
+    // The half that was missing until now.
+    expect(r.out).toContain('What to do');
+    expect(r.out).toContain('acs-thread-not-in-db');
+    expect(r.out).toMatch(/means .*database has no row/s);
+    expect(r.out).toMatch(/check .*Re-run doctor/s);
+  });
+
+  it('states the scope, so a check reading ok can be believed', async () => {
+    const r = await run('doctor');
+    expect(r.out).toMatch(/walked\s+1 ACS thread/);
+    expect(r.out).toMatch(/against\s+1 identit/);
+  });
+
+  it('gives --json the same advice a person gets', async () => {
+    const r = await run('doctor', '--json');
+    const report = JSON.parse(r.out) as {
+      advice: { kind: string; means: string; action: string; verify: string }[];
+      scope: { acsThreads: number };
+    };
+    expect(report.advice.map((a) => a.kind)).toContain('acs-thread-not-in-db');
+    expect(report.advice[0]?.action.length).toBeGreaterThan(40);
+    expect(report.scope.acsThreads).toBe(1);
   });
 });
 
