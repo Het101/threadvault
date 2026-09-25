@@ -11,6 +11,28 @@ import { createHash } from 'node:crypto';
  * duplicate participant row. Derived from the ACS id, re-running is a no-op.
  * Name-based UUIDv5 shape so it is obviously synthetic next to a real host id.
  */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The mirror stores our user ids in `uuid` columns, because the domain rule is
+ * that attribution is our UUID and never a provider identity.
+ *
+ * Checked here rather than left to Postgres. The driver answers
+ * `invalid input syntax for type uuid: "u-alice-0001"` with no field, no
+ * record and no hint that a UUID was ever required - and by then a thread row
+ * has already been written, because the backfill is not one transaction.
+ */
+function requireUuid(value: string, field: string, legacyThreadId: string): string {
+  if (UUID.test(value)) return value;
+  throw new Error(
+    `${field} is not a UUID: ${JSON.stringify(value)} (thread ${legacyThreadId}). ` +
+      `The mirror keys attribution on your own user id and stores it as a uuid. ` +
+      `Map your ids to UUIDs in the extract, or leave the field null to have a ` +
+      `stand-in derived. Re-running after fixing it updates rows rather than ` +
+      `duplicating them, so a partial run is safe to repeat.`,
+  );
+}
+
 export function shadowUserId(acsId: string): string {
   const h = createHash('sha1').update(`threadvault:shadow:${acsId}`).digest();
   h[6] = (h[6]! & 0x0f) | 0x50;
@@ -36,6 +58,7 @@ export async function sinkPostgres(
   const stats = { threads: 0, participants: 0, messages: 0, identities: 0 };
   const threadIdCache = new Map<string, string>(); // legacy external id -> threadvault uuid
   const userAcsCache = new Map<string, string>(); // ACS id -> threadvault uuid
+  const identitiesSeen = new Set<string>(); // our_user_id|resource_guid already counted
 
   // Fetch all known users up front for fast sync
   const knownUsers = await db.query<{ our_user_id: string; acs_id: string }>(
@@ -84,7 +107,7 @@ export async function sinkPostgres(
 
       let ourUserUuid = userAcsCache.get(rec.acsId);
       if (!ourUserUuid && rec.ourUserId) {
-        ourUserUuid = rec.ourUserId;
+        ourUserUuid = requireUuid(rec.ourUserId, 'ourUserId', rec.legacyThreadId);
       }
 
       // No host mapping for this ACS id yet. Stand in with a derived id so the
@@ -116,7 +139,13 @@ export async function sinkPostgres(
           [ourUserUuid, rec.acsId, parsed.resourceGuid, rec.displayName],
         );
         userAcsCache.set(rec.acsId, ourUserUuid);
-        stats.identities++;
+        // Per identity, not per upsert. One person in three threads is three
+        // upserts and one row, and the old count said three.
+        const key = `${ourUserUuid}|${parsed.resourceGuid}`;
+        if (!identitiesSeen.has(key)) {
+          identitiesSeen.add(key);
+          stats.identities++;
+        }
       }
     }
 
@@ -131,7 +160,11 @@ export async function sinkPostgres(
         threadIdCache.set(rec.legacyThreadId, threadUuid);
       }
 
-      const originalSenderUserId = resolveOriginalSenderUserId({ metadata: rec.metadata }) || rec.ourSenderUserId;
+      const rawSender =
+        resolveOriginalSenderUserId({ metadata: rec.metadata }) || rec.ourSenderUserId;
+      const originalSenderUserId = rawSender
+        ? requireUuid(rawSender, 'ourSenderUserId', rec.legacyThreadId)
+        : rawSender;
       const sentAt = resolveSentAt({ createdOn: rec.createdOn, metadata: rec.metadata });
 
       const sql = `

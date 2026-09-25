@@ -46,6 +46,30 @@ changes may land in a minor release; they are always called out below.
   read one thread is still tolerated; a failure to read any is not a finding
   about the estate.
 
+## [Unreleased]
+
+### Fixed
+
+- **A host user id that is not a UUID now fails with a message you can act**
+  **on.** The mirror stores our user ids in `uuid` columns, because the domain
+  rule is that attribution is our UUID and never a provider identity. Nothing
+  checked that, so Postgres did: `invalid input syntax for type uuid:
+  "u-alice-0001"` — no field, no record, no hint that a UUID was ever wanted.
+
+  Worse, it failed part-way: a thread row was already written, because the
+  backfill is not one transaction. The error now names the field, the value and
+  the thread, says what is expected, offers both ways out — map your ids, or
+  leave the field null and have a stand-in derived — and says that re-running
+  updates rows rather than duplicating them, so a partial run is safe to repeat.
+
+- **`Identities: N` counted upserts, not identities.** One person in three
+  threads is three upserts and one row, and the summary said three. A real run
+  reported 6 against a table holding 4. Counted per identity now.
+
+  Both found by running `mirror backfill --commit` against a real Postgres for
+  the first time. Three of the existing tests had fixtures the real schema
+  would always have rejected; they use UUIDs now.
+
 ## [0.9.1] - 2026-09-26
 
 `migrate verify` now works. Until this release it reported `verified clean 0`
