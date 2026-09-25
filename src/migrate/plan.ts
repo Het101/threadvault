@@ -97,12 +97,12 @@ function attributionNote(report: PlanReport): string | null {
 
   if (missing === report.messages) {
     return [
-      'note: no message carries our own user id. Expected for a first `migrate',
-      '      extract`: ACS does not store it, and `migrate apply` is what writes',
-      '      it. A replay from this dump maps each old ACS id to one new identity,',
-      '      so attribution holds inside the estate - but the new identities are',
-      '      not linked to your users. Extract through `mirror backfill` if you',
-      '      need that link.',
+      'note: no message carries our own user id. Expected for a first extract:',
+      '      no chat provider stores your user id, and `migrate apply` is what',
+      '      writes it. A replay from this dump maps each old sender id to one new',
+      '      identity, so attribution holds inside the estate - but the new',
+      '      identities are not linked to your users. Extract through `mirror',
+      '      backfill` against your own tables if you need that link.',
     ].join('\n');
   }
 

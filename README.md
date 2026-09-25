@@ -218,12 +218,14 @@ SMS or WhatsApp are identified by their binding address. The field names are
 byte-compatible with dumps taken before Twilio was supported, so read that one
 as *the provider's own identifier for the sender*.
 
-> **Read this before you rely on it.** The Twilio reader is covered by tests
-> against a faked HTTP layer — pagination, auth, partial failures — but it has
-> not yet been run against a live Twilio account. Everything ACS-side in this
-> tool has. If you run it against real Twilio data,
-> [tell us what happened](https://github.com/Het101/threadvault/issues); that is
-> the gap between this and the rest of the project.
+> **Read this before you rely on it.** The Twilio reader has been run end to
+> end — the built binary, over HTTP, against a server speaking the Conversations
+> wire format, with pagination forced on every collection — and it produced a
+> dump matching known fixtures exactly. What it has **not** done is run against a
+> live Twilio account. Twilio does not offer Conversations on trial accounts, so
+> that needs a paid one. Everything ACS-side in this tool has been run against
+> real Azure. If you run this against real Twilio data,
+> [tell us what happened](https://github.com/Het101/threadvault/issues).
 
 ## Migrating to a new resource
 
@@ -376,6 +378,7 @@ the safe first thing to run on an extract from someone else's machine.
 | `TWILIO_ACCOUNT_SID` | — | `AC…`. Required for `--from-twilio`. |
 | `TWILIO_API_KEY_SID` / `TWILIO_API_KEY_SECRET` | — | `SK…` and its secret. Preferred over the auth token, because a key can be revoked on its own. |
 | `TWILIO_AUTH_TOKEN` | — | Used only when no API key is set. This is the whole account; prefer a key. |
+| `TWILIO_BASE_URL` | Twilio | Override the Conversations endpoint — for a regional host, or a stand-in server. Must be `https` unless it is loopback, because this URL carries the credential and the message bodies. |
 | `ACS_RETRY_ATTEMPTS` | `8` | Retries through ACS throttling; `retry-after` is honoured when ACS sends it. Permission and not-found errors fail at once rather than backing off through a schedule that cannot succeed. |
 | `PG_SSL_NO_VERIFY` | `false` | Skips TLS certificate verification for remote Postgres. An escape hatch for a private CA. Leave it off — that connection carries credentials and message bodies. |
 | `PG_HOST_OVERRIDE` | — | `host=address` pairs, comma-separated, for pinned DNS. |
