@@ -1,0 +1,3 @@
+{"kind":"thread","ourThreadId":null,"legacyThreadId":"19:smoke@thread.v2","topic":"lorem","createdOn":"2022-01-01T00:00:00.000Z","createdByAcsId":"8:acs:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa_sys","deletedOn":null,"readerAcsId":"8:acs:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa_sys"}
+{"kind":"participant","legacyThreadId":"19:smoke@thread.v2","acsId":"8:acs:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa_sys","displayName":"lorem","ourUserId":"u-1"}
+{"kind":"message","legacyThreadId":"19:smoke@thread.v2","messageId":"m-1","type":"text","sequenceId":"1","content":"lorem ipsum","senderAcsId":"8:acs:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa_sys","senderDisplayName":"lorem","ourSenderUserId":"u-1","createdOn":"2022-01-01T12:00:00.000Z","editedOn":null,"deletedOn":null,"metadata":null}
