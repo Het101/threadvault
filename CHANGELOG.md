@@ -8,6 +8,26 @@ changes may land in a minor release; they are always called out below.
 
 ## [Unreleased]
 
+### Added
+
+- **`TWILIO_BASE_URL`.** Points the Conversations client somewhere other than
+  the default host. Twilio runs regional endpoints, so this is not only a test
+  seam — but it is also the thing that made the Twilio reader verifiable at
+  all. Plain `http` is refused unless the host is loopback: that URL carries
+  the credential in an Authorization header and message bodies on the way back.
+
+  With it, the **built binary** was run end to end against a server speaking
+  the Conversations wire format, page size forced to 2 so every collection had
+  to paginate. It produced a dump matching known fixtures exactly — 3 threads,
+  6 participants, 5 messages — including an empty conversation and a
+  participant reached over SMS who has a binding address and no identity.
+
+### Changed
+
+- **`migrate plan`'s attribution note no longer says "ACS"** when the dump did
+  not come from ACS. It explained a Twilio dump in terms of a provider that was
+  not involved.
+
 ### Fixed
 
 - **A walk that cannot list anything no longer reports an empty estate.**

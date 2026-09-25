@@ -142,7 +142,7 @@ describe('how plan reports attribution', () => {
     expect(out).toContain('messages carrying our user id:    0 of 2');
     // The reassurance has to be there, or a first-time user reads 0 of 2 as a
     // disaster and stops.
-    expect(out).toContain('Expected for a first `migrate');
+    expect(out).toContain('Expected for a first extract');
     expect(out).not.toContain('WARNING');
   });
 

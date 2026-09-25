@@ -8,7 +8,39 @@
  */
 import { withRetry } from '../acs/retry.ts';
 
-const BASE = 'https://conversations.twilio.com/v1';
+const DEFAULT_BASE = 'https://conversations.twilio.com/v1';
+
+/**
+ * Where the Conversations API lives.
+ *
+ * Twilio runs regional endpoints, so this is not only a test seam - an account
+ * pinned to Ireland or Australia answers on its own host. It is also the only
+ * way to run the real binary against a stand-in server, which is the
+ * difference between "the unit mocks pass" and "the shipped command walks an
+ * API and writes a correct dump".
+ *
+ * Plain http is refused except on loopback. Everything this carries - the
+ * credential in an Authorization header, and message bodies coming back - has
+ * no business crossing a network in the clear.
+ */
+export function baseUrl(): string {
+  const raw = (process.env.TWILIO_BASE_URL || '').trim();
+  if (!raw) return DEFAULT_BASE;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error(`TWILIO_BASE_URL is not a URL: ${raw}`);
+  }
+  const loopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
+  if (url.protocol !== 'https:' && !loopback) {
+    throw new Error(
+      `TWILIO_BASE_URL must be https (got ${url.protocol}//). ` +
+        `It carries the credential and the message bodies.`,
+    );
+  }
+  return raw.replace(/\/+$/, '');
+}
 
 export type TwilioAuth = {
   /** AC… account SID, always required — it identifies the account. */
@@ -131,14 +163,14 @@ export function createTwilio(auth: TwilioAuth): TwilioSession {
     conversations: (pageSize) =>
       paginate<TwilioConversation>(
         auth,
-        `${BASE}/Conversations?PageSize=${pageSize}`,
+        `${baseUrl()}/Conversations?PageSize=${pageSize}`,
         'conversations',
         'listConversations',
       ),
     participants: (sid) =>
       paginate<TwilioParticipant>(
         auth,
-        `${BASE}/Conversations/${encodeURIComponent(sid)}/Participants?PageSize=100`,
+        `${baseUrl()}/Conversations/${encodeURIComponent(sid)}/Participants?PageSize=100`,
         'participants',
         'listParticipants',
       ),
@@ -148,7 +180,7 @@ export function createTwilio(auth: TwilioAuth): TwilioSession {
         // Ascending, so a conversation's messages arrive in the order they were
         // sent. The mirror stores `index` as the sequence, and a replay that
         // reordered them would be wrong in a way nothing downstream can detect.
-        `${BASE}/Conversations/${encodeURIComponent(sid)}/Messages?Order=asc&PageSize=${pageSize}`,
+        `${baseUrl()}/Conversations/${encodeURIComponent(sid)}/Messages?Order=asc&PageSize=${pageSize}`,
         'messages',
         'listMessages',
       ),
@@ -167,7 +199,7 @@ export async function probeTwilio(
   const problem = authProblem(auth);
   if (problem) return { ok: false, accountSid: auth.accountSid ?? '', error: problem };
   try {
-    await withRetry('probeTwilio', () => get(auth, `${BASE}/Conversations?PageSize=1`));
+    await withRetry('probeTwilio', () => get(auth, `${baseUrl()}/Conversations?PageSize=1`));
     return { ok: true, accountSid: auth.accountSid };
   } catch (e) {
     return {

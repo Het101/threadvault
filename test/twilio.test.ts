@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { authProblem, createTwilio, probeTwilio } from '../src/twilio/client.ts';
+import { authProblem, baseUrl, createTwilio, probeTwilio } from '../src/twilio/client.ts';
 import { extractTwilio, participantId } from '../src/twilio/extract.ts';
 import type { Rec } from '../src/mirror/types.ts';
 
@@ -25,6 +25,46 @@ describe('credentials are checked before the network is', () => {
   it('accepts an account SID with a token, and an API key with a secret', () => {
     expect(authProblem({ accountSid: ACCOUNT, password: 'tok' })).toBeNull();
     expect(authProblem({ accountSid: ACCOUNT, username: KEY, password: 'sec' })).toBeNull();
+  });
+});
+
+describe('where the API is', () => {
+  const saved = process.env.TWILIO_BASE_URL;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.TWILIO_BASE_URL;
+    else process.env.TWILIO_BASE_URL = saved;
+  });
+
+  it('is Twilio unless told otherwise', () => {
+    delete process.env.TWILIO_BASE_URL;
+    expect(baseUrl()).toBe('https://conversations.twilio.com/v1');
+  });
+
+  // Twilio runs regional endpoints, so an override is not only a test seam.
+  it('accepts an https host and drops a trailing slash', () => {
+    process.env.TWILIO_BASE_URL = 'https://conversations.dublin.ie1.twilio.com/v1/';
+    expect(baseUrl()).toBe('https://conversations.dublin.ie1.twilio.com/v1');
+  });
+
+  /**
+   * This URL carries the credential in an Authorization header and message
+   * bodies on the way back. Neither belongs on the wire in the clear.
+   */
+  it('refuses plain http to anywhere but loopback', () => {
+    process.env.TWILIO_BASE_URL = 'http://conversations.twilio.com/v1';
+    expect(() => baseUrl()).toThrow(/must be https/);
+  });
+
+  it('allows http on loopback, which is how the real binary gets tested', () => {
+    for (const host of ['localhost', '127.0.0.1']) {
+      process.env.TWILIO_BASE_URL = `http://${host}:8765/v1`;
+      expect(baseUrl()).toBe(`http://${host}:8765/v1`);
+    }
+  });
+
+  it('rejects something that is not a URL at all', () => {
+    process.env.TWILIO_BASE_URL = 'conversations.twilio.com';
+    expect(() => baseUrl()).toThrow(/not a URL/);
   });
 });
 
