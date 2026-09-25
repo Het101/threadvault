@@ -72,6 +72,7 @@ trusting is the release pipeline, not the source. What guards it:
 | [OpenSSF Scorecard](https://github.com/Het101/threadvault/security/code-scanning) | push to `main`, weekly | Posture drift — branch protection weakened, a permission widened, an action unpinned |
 | [Snyk](https://app.snyk.io) and `npm audit` | every PR | Known advisories in the dependency tree |
 | Socket | every PR | Install scripts, network access, and other behaviour newly introduced by a dependency |
+| [Harden-Runner](https://github.com/step-security/harden-runner) | every job that installs or runs dependencies | Outbound network calls made *while* the build runs — the only check here that looks at behaviour rather than code |
 
 Supporting decisions, all of which are in the repo rather than in someone's head:
 
@@ -79,6 +80,7 @@ Supporting decisions, all of which are in the repo rather than in someone's head
 - **Dependabot waits 7 days** (14 for majors) before proposing a new version. Malicious releases are usually yanked within a day or two, so the cooldown means most of them are gone before they ever reach a pull request.
 - **Workflows default to `contents: read`.** The three jobs that need more ask for it themselves, so a step added later inherits nothing.
 - **The release job does not use the Actions cache.** That cache is writable by lower-privilege workflows, and this is the job holding the npm publishing identity.
+- **CI runners are monitored for outbound traffic.** Every check above reads code; a compromised dependency is only visible at the moment it runs. Harden-Runner is in audit mode while the legitimate destinations are collected, and the release job moves to a deny-by-default allowlist once they are.
 - **Publishing uses npm trusted publishing over OIDC** with provenance, and the final `npm publish` is staged — a human approves it with a second factor. There is no long-lived npm token to steal.
 
 ### Scorecard findings that are open on purpose
