@@ -255,6 +255,23 @@ Run `migrate verify` afterwards. It compares the two sides — message counts,
 participants, attribution and timestamps — and is the only thing that tells you
 the replay was faithful rather than merely finished.
 
+## Cleaning up a test replay
+
+`migrate apply` does not clean up after itself. It is meant to leave an estate
+behind, so a test run leaves one too. The ledger is the record of what it made:
+`thread` lines carry the new thread id, `identity` lines carry each identity it
+minted.
+
+**Delete the threads before the identities, and delete each thread as one of
+its own participants.** ACS only accepts `deleteChatThread` from a participant
+— there is no admin delete, and the resource access key does not grant one.
+Delete the identities first, or delete every thread as a single identity that
+is not in all of them, and any thread you miss becomes unreachable **forever**:
+no identity can open it, no new identity can be added to it, and it cannot be
+removed.
+
+That is not hypothetical. It is how this document came to have this section.
+
 ## Things that will bite you
 
 - **Do not rerun `extract` against a resource you have already replayed into.**

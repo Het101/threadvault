@@ -7,27 +7,43 @@ type TargetThread = {
   participants: string[];
   messages: Array<{ type: string; metadata: Record<string, string> | null }>;
   readable: boolean;
+  /**
+   * Identities ACS will let read this thread.
+   *
+   * When set, the mock refuses anyone else, the way ACS does. The tests here
+   * used to ignore who was asking entirely, which is how `verify` shipped
+   * reading every thread as one identity that belonged to none of them.
+   */
+  readableBy?: string[];
 };
+
+/** Every identity chatFor() was asked for, so minting can be asserted against. */
+const askedAs: string[] = [];
+const createUser = vi.fn().mockResolvedValue({ communicationUserId: "8:acs:verifier" });
 const target: Record<string, TargetThread> = {};
 
 vi.mock('../src/acs/client.ts', () => ({
   createAcs: vi.fn().mockImplementation(() => ({
     identity: {
-      createUser: vi.fn().mockResolvedValue({ communicationUserId: '8:acs:verifier' }),
+      createUser,
       deleteUser: vi.fn().mockResolvedValue(undefined),
     },
     endpoint: 'https://mock.communication.azure.com',
-    chatFor: vi.fn().mockResolvedValue({
+    chatFor: vi.fn().mockImplementation((reader: string) => {
+      askedAs.push(reader);
+      const allowed = (t: TargetThread | undefined): boolean =>
+        !!t && t.readable && (!t.readableBy || t.readableBy.includes(reader));
+      return Promise.resolve({
       getChatThreadClient: (threadId: string) => ({
         listParticipants: async function* () {
           const t = target[threadId];
-          if (!t || !t.readable) throw new Error('Forbidden');
-          for (const p of t.participants) yield { id: { communicationUserId: p } };
+          if (!allowed(t)) throw new Error('Forbidden');
+          for (const p of t!.participants) yield { id: { communicationUserId: p } };
         },
         listMessages: async function* () {
           const t = target[threadId];
-          if (!t || !t.readable) throw new Error('Forbidden');
-          for (const [i, m] of t.messages.entries()) {
+          if (!allowed(t)) throw new Error('Forbidden');
+          for (const [i, m] of t!.messages.entries()) {
             yield {
               id: `${threadId}-m${i}`,
               type: m.type,
@@ -39,6 +55,7 @@ vi.mock('../src/acs/client.ts', () => ({
           }
         },
       }),
+      });
     }),
   })),
 }));
@@ -93,6 +110,18 @@ function source(threadId: string, participants: number, messages: number): Rec[]
   return out;
 }
 
+/**
+ * Map the participants `source()` creates, the way `apply` would have.
+ *
+ * A ledger from a real replay always carries these — they are the identities
+ * it minted. Verify reads each thread as one of them, so a test ledger without
+ * them is not a ledger any replay could produce.
+ */
+function withIdentities(ledger: ReplayLedger, n = 4): ReplayLedger {
+  for (let i = 0; i < n; i++) ledger.recordIdentity(`u-${i}`, `8:acs:new_p${i}`);
+  return ledger;
+}
+
 const run = (src: Rec[], ledger: ReplayLedger) =>
   migrateVerify({
     connectionString: 'endpoint=https://mock.communication.azure.com/;accesskey=mock',
@@ -115,7 +144,7 @@ describe('migrateVerify', () => {
         { type: 'text', metadata: goodMeta },
       ],
     };
-    const ledger = ReplayLedger.ephemeral();
+    const ledger = withIdentities(ReplayLedger.ephemeral());
     ledger.recordThread('19:t', { target: 'tgt-1', messages: 2, done: true });
 
     const report = await run(source('19:t', 2, 2), ledger);
@@ -135,7 +164,7 @@ describe('migrateVerify', () => {
         { type: 'text', metadata: goodMeta },
       ],
     };
-    const ledger = ReplayLedger.ephemeral();
+    const ledger = withIdentities(ReplayLedger.ephemeral());
     ledger.recordThread('19:t', { target: 'tgt-1', messages: 1, done: true });
     const report = await run(source('19:t', 1, 1), ledger);
     expect(report.findings).toEqual([]);
@@ -147,7 +176,7 @@ describe('migrateVerify', () => {
       participants: ['8:acs:a'],
       messages: [{ type: 'text', metadata: goodMeta }],
     };
-    const ledger = ReplayLedger.ephemeral();
+    const ledger = withIdentities(ReplayLedger.ephemeral());
     ledger.recordThread('19:t', { target: 'tgt-1', messages: 3, done: true });
     const report = await run(source('19:t', 1, 3), ledger);
     expect(report.counts['message-count']).toBe(1);
@@ -166,7 +195,7 @@ describe('migrateVerify', () => {
       participants: ['8:acs:a'],
       messages: [{ type: 'text', metadata: goodMeta }],
     };
-    const ledger = ReplayLedger.ephemeral();
+    const ledger = withIdentities(ReplayLedger.ephemeral());
     ledger.recordThread('19:t', { target: 'tgt-1', messages: 1, done: false });
     const report = await run(source('19:t', 1, 1), ledger);
     expect(report.counts.incomplete).toBe(1);
@@ -182,7 +211,7 @@ describe('migrateVerify', () => {
         { type: 'text', metadata: goodMeta },
       ],
     };
-    const ledger = ReplayLedger.ephemeral();
+    const ledger = withIdentities(ReplayLedger.ephemeral());
     ledger.recordThread('19:t', { target: 'tgt-1', messages: 2, done: true });
     const report = await run(source('19:t', 1, 2), ledger);
     expect(report.counts.unattributed).toBe(1);
@@ -195,7 +224,7 @@ describe('migrateVerify', () => {
       participants: ['8:acs:a'],
       messages: [{ type: 'text', metadata: { originalSenderUserId: 'u-1' } }],
     };
-    const ledger = ReplayLedger.ephemeral();
+    const ledger = withIdentities(ReplayLedger.ephemeral());
     ledger.recordThread('19:t', { target: 'tgt-1', messages: 1, done: true });
     const report = await run(source('19:t', 1, 1), ledger);
     expect(report.counts.untimed).toBe(1);
@@ -203,7 +232,7 @@ describe('migrateVerify', () => {
 
   it('reports a thread it cannot read back rather than calling it clean', async () => {
     target['tgt-1'] = { readable: false, participants: [], messages: [] };
-    const ledger = ReplayLedger.ephemeral();
+    const ledger = withIdentities(ReplayLedger.ephemeral());
     ledger.recordThread('19:t', { target: 'tgt-1', messages: 1, done: true });
     const report = await run(source('19:t', 1, 1), ledger);
     expect(report.counts.unreadable).toBe(1);
@@ -216,9 +245,128 @@ describe('migrateVerify', () => {
       participants: ['8:acs:a'],
       messages: [{ type: 'text', metadata: null }],
     };
-    const ledger = ReplayLedger.ephemeral();
+    const ledger = withIdentities(ReplayLedger.ephemeral());
     ledger.recordThread('19:t', { target: 'tgt-1', messages: 1, done: true });
     const report = await run(source('19:t', 1, 1), ledger);
     expect(JSON.stringify(report)).not.toContain('lorem ipsum');
+  });
+});
+
+/**
+ * Found by running the full loop against a real ACS resource for the first
+ * time: plan, apply --commit, verify. The replay was perfect and verify said
+ * "verified clean 0", every thread `unreadable`.
+ *
+ * Two causes, both about who is asking. ACS refuses a thread to an identity
+ * that is not a participant, and verify was asking as (a) a freshly minted
+ * identity that participates in nothing, or (b) one identity for the whole
+ * estate, which cannot be in every thread. The tests above never caught it
+ * because the mock ignored the reader entirely.
+ */
+describe('verify reads each thread as somebody who is in it', () => {
+  it('uses the identities the ledger minted, with no reader passed in', async () => {
+    target['tgt-1'] = {
+      readable: true,
+      readableBy: ['8:acs:new_p0', '8:acs:new_p1'],
+      participants: ['8:acs:new_p0', '8:acs:new_p1'],
+      messages: [{ type: 'text', metadata: goodMeta }],
+    };
+    const ledger = withIdentities(ReplayLedger.ephemeral());
+    ledger.recordThread('19:t1@thread.v2', { target: 'tgt-1', messages: 1, done: true });
+
+    const report = await run(source('19:t1@thread.v2', 2, 1), ledger);
+    expect(report.findings).toEqual([]);
+    expect(report.threadsClean).toBe(1);
+  });
+
+  /**
+   * The case that survived the first fix. Reading everything as one identity
+   * verifies only the threads that identity happens to be in — here, the second
+   * thread has an entirely different membership.
+   */
+  it('picks a different reader per thread when membership differs', async () => {
+    target['tgt-1'] = {
+      readable: true,
+      readableBy: ['8:acs:new_p0'],
+      participants: ['8:acs:new_p0'],
+      messages: [],
+    };
+    target['tgt-2'] = {
+      readable: true,
+      readableBy: ['8:acs:new_p3'],
+      participants: ['8:acs:new_p3'],
+      messages: [],
+    };
+    const ledger = withIdentities(ReplayLedger.ephemeral());
+    ledger.recordThread('19:a@thread.v2', { target: 'tgt-1', messages: 0, done: true });
+    ledger.recordThread('19:b@thread.v2', { target: 'tgt-2', messages: 0, done: true });
+
+    const src = [
+      ...source('19:a@thread.v2', 1, 0),
+      ...source('19:b@thread.v2', 1, 0).map((r) =>
+        r.kind === 'participant' ? { ...r, ourUserId: 'u-3' } : r,
+      ),
+    ];
+
+    const report = await run(src, ledger);
+    expect(report.findings).toEqual([]);
+    expect(report.threadsClean).toBe(2);
+  });
+
+  /**
+   * apply keys the ledger on our user id where there is one and the source ACS
+   * id otherwise. Verify has to use the same rule or it finds nobody — the first
+   * attempt at this fix keyed on the ACS id alone and still reported 0 clean.
+   */
+  it('keys on the source ACS id when a participant has no user id', async () => {
+    target['tgt-1'] = {
+      readable: true,
+      readableBy: ['8:acs:new_anon'],
+      participants: ['8:acs:new_anon'],
+      messages: [],
+    };
+    const ledger = ReplayLedger.ephemeral();
+    ledger.recordIdentity('8:acs:old_p0', '8:acs:new_anon');
+    ledger.recordThread('19:t1@thread.v2', { target: 'tgt-1', messages: 0, done: true });
+
+    const src = source('19:t1@thread.v2', 1, 0).map((r) =>
+      r.kind === 'participant' ? { ...r, ourUserId: null } : r,
+    );
+
+    const report = await run(src, ledger);
+    expect(report.findings).toEqual([]);
+  });
+
+  it('says so when no identity in the ledger is in the thread', async () => {
+    target['tgt-1'] = {
+      readable: true,
+      readableBy: ['8:acs:somebody-else'],
+      participants: ['8:acs:somebody-else'],
+      messages: [],
+    };
+    const ledger = ReplayLedger.ephemeral();
+    ledger.recordThread('19:t1@thread.v2', { target: 'tgt-1', messages: 0, done: true });
+
+    const report = await run(source('19:t1@thread.v2', 1, 0), ledger);
+    expect(report.findings[0]?.issue).toBe('unreadable');
+    // A bare "Forbidden" sends people looking at the replay. The reason is who asked.
+    expect(JSON.stringify(report.findings[0]?.detail)).toMatch(/no identity in the ledger/);
+  });
+
+  // A read-only command that creates an identity was always odd, and the one it
+  // created could not read anything anyway.
+  it('mints nothing', async () => {
+    createUser.mockClear();
+    target['tgt-1'] = {
+      readable: true,
+      readableBy: ['8:acs:new_p0'],
+      participants: ['8:acs:new_p0'],
+      messages: [],
+    };
+    const ledger = withIdentities(ReplayLedger.ephemeral());
+    ledger.recordThread('19:t1@thread.v2', { target: 'tgt-1', messages: 0, done: true });
+
+    await run(source('19:t1@thread.v2', 1, 0), ledger);
+    expect(createUser).not.toHaveBeenCalled();
   });
 });

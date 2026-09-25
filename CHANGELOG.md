@@ -46,6 +46,38 @@ changes may land in a minor release; they are always called out below.
   read one thread is still tolerated; a failure to read any is not a finding
   about the estate.
 
+## [Unreleased]
+
+### Fixed
+
+- **`migrate verify` could not read anything it had just verified.** It
+  reported `verified clean 0` with every thread `unreadable`, however good the
+  replay was.
+
+  ACS refuses a thread to an identity that is not a participant. Verify asked
+  as a freshly minted identity, which participates in nothing at all — and when
+  given `--reader-acs-id`, it used that one identity for the whole estate, so
+  it could only ever see the threads that person happened to be in.
+
+  It now reads each thread as one of the identities the replay minted for that
+  thread's own participants, taken from the ledger, falling back through them
+  until one can open it. `--reader-acs-id` is tried first when given. Nothing
+  is minted any more; a read-only command creating an identity was always odd,
+  and the one it created could not read anything.
+
+  Found by running the full loop against a real ACS resource for the first
+  time: `plan`, `apply --commit`, `verify`. The replay was correct and the
+  verification of it was worthless. No test caught it because the mock ignored
+  which identity was asking.
+
+### Changed
+
+- **The runbook explains how to clean up a test replay**, and in what order.
+  ACS only accepts `deleteChatThread` from a participant — there is no admin
+  delete and the access key does not grant one — so deleting the minted
+  identities first, or deleting every thread as one identity that is not in all
+  of them, orphans any thread you miss permanently.
+
 ## [0.9.0] - 2026-09-25
 
 The Twilio reader has now been run against a live Twilio account, and a defect

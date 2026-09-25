@@ -39,7 +39,20 @@ export const VERIFY_ISSUES: Record<VerifyIssue, string> = {
   untimed: 'Replayed messages carry no originalCreatedOn — they will show the replay date.',
 };
 
-type Expected = { participants: number; messages: number };
+type Expected = {
+  participants: number;
+  messages: number;
+  /**
+   * How the ledger keys this thread’s participants.
+   *
+   * ACS only lets an identity read a thread it belongs to, so verifying a
+   * replayed thread means reading it as somebody who is in it. The ledger keys
+   * on our own user id where there is one and the source ACS id otherwise —
+   * the same rule `apply` used when it minted them. Keying on the ACS id alone
+   * misses every participant the source could name properly.
+   */
+  participantKeys: string[];
+};
 
 /** Fold the source into per-thread expectations. Bodies are never retained. */
 export async function expectationsFrom(
@@ -49,14 +62,20 @@ export async function expectationsFrom(
   const bump = (id: string): Expected => {
     let e = expected.get(id);
     if (!e) {
-      e = { participants: 0, messages: 0 };
+      e = { participants: 0, messages: 0, participantKeys: [] };
       expected.set(id, e);
     }
     return e;
   };
   for await (const rec of stream) {
     if (rec.kind === 'thread') bump(rec.legacyThreadId);
-    else if (rec.kind === 'participant') bump(rec.legacyThreadId).participants++;
+    else if (rec.kind === 'participant') {
+      const e = bump(rec.legacyThreadId);
+      e.participants++;
+      // identityKey() in apply.ts, mirrored.
+      const key = rec.ourUserId?.trim() || rec.acsId;
+      if (key) e.participantKeys.push(key);
+    }
     else if (rec.kind === 'message' && isReplayable(rec)) bump(rec.legacyThreadId).messages++;
   }
   return expected;
@@ -85,13 +104,29 @@ export async function migrateVerify(opts: VerifyOpts): Promise<VerifyReport> {
   const expected = await expectationsFrom(opts.sourceStream);
   const acs = createAcs(opts.connectionString);
 
-  let readerId = opts.readerAcsId;
-  let minted: { communicationUserId: string } | null = null;
-  if (!readerId) {
-    minted = await acs.identity.createUser();
-    readerId = minted.communicationUserId;
+  /**
+   * Who can read a given replayed thread.
+   *
+   * Not one reader for the whole estate: ACS refuses a thread to an identity
+   * that is not a participant, so a single reader can only verify the threads
+   * it happens to be in. This used to mint a fresh identity when none was
+   * given, which participates in nothing at all - so every thread came back
+   * `unreadable` and the report said "verified clean 0" however good the
+   * replay was.
+   *
+   * The ledger maps each source participant to the identity the replay minted
+   * for them, and those identities were added to the thread. They are the
+   * readers.
+   */
+  function readersFor(legacyId: string): string[] {
+    const out: string[] = [];
+    if (opts.readerAcsId) out.push(opts.readerAcsId);
+    for (const key of expected.get(legacyId)?.participantKeys ?? []) {
+      const mapped = opts.ledger.identities.get(key);
+      if (mapped && !out.includes(mapped)) out.push(mapped);
+    }
+    return out;
   }
-  const chat = await acs.chatFor(readerId);
 
   const findings: VerifyFinding[] = [];
   const counts = {
@@ -140,23 +175,38 @@ export async function migrateVerify(opts: VerifyOpts): Promise<VerifyReport> {
     for await (const result of poolMap(checkable, concurrency, async (legacyId) => {
       const progress = opts.ledger.threads.get(legacyId)!;
       const want = expected.get(legacyId)!;
-      const tc = chat.getChatThreadClient(progress.target);
-      try {
-        const participants = await withRetry(`verifyParticipants ${progress.target}`, () =>
-          listParticipantIds(tc),
-        );
-        const messages = await withRetry(`verifyMessages ${progress.target}`, () =>
-          listMessageMetaWithType(tc, progress.target),
-        );
-        return { legacyId, progress, want, participants, messages, error: null as string | null };
-      } catch (e) {
+      const readers = readersFor(legacyId);
+      let lastError = readers.length
+        ? ''
+        : 'no identity in the ledger participates in this thread';
+
+      // First reader that can open it wins. A Forbidden here is not a finding
+      // about the replay, only about who asked.
+      for (const reader of readers) {
+        try {
+          const chat = await acs.chatFor(reader);
+          const tc = chat.getChatThreadClient(progress.target);
+          const participants = await withRetry(`verifyParticipants ${progress.target}`, () =>
+            listParticipantIds(tc),
+          );
+          const messages = await withRetry(`verifyMessages ${progress.target}`, () =>
+            listMessageMetaWithType(tc, progress.target),
+          );
+          return { legacyId, progress, want, participants, messages, error: null as string | null };
+        } catch (e) {
+          lastError = e instanceof Error ? e.message : String(e);
+        }
+      }
+
+      {
+        const e = new Error(lastError);
         return {
           legacyId,
           progress,
           want,
           participants: [] as string[],
           messages: [] as Awaited<ReturnType<typeof listMessageMetaWithType>>,
-          error: e instanceof Error ? e.message : String(e),
+          error: e.message,
         };
       }
     })) {
@@ -227,7 +277,8 @@ export async function migrateVerify(opts: VerifyOpts): Promise<VerifyReport> {
       if (threadClean && progress.done) clean++;
     }
   } finally {
-    if (minted) await acs.identity.deleteUser(minted).catch(() => undefined);
+    // Nothing is minted here any more, so there is nothing to clean up. A
+    // read-only command that created an identity was always odd.
   }
 
   return {
