@@ -2,8 +2,25 @@ import { belongsToResource, resolveOriginalSenderUserId } from '../acs/identity.
 import type { HostMapping } from '../config.ts';
 import { qid, type PgClient } from '../db/pg.ts';
 
+/**
+ * What a finding actually is, as opposed to which check produced it.
+ *
+ * Check 5 raises three different problems with three different answers, so
+ * the check number alone is not enough to say what to do about one.
+ */
+export type FindingKind =
+  | 'stale-identity'
+  | 'system-only-thread'
+  | 'misattributed-message'
+  | 'no-system-user'
+  | 'system-user-has-no-identity'
+  | 'thread-without-external-id'
+  | 'acs-thread-not-in-db'
+  | 'db-thread-not-in-acs';
+
 export type Finding = {
   check: 1 | 2 | 3 | 4 | 5;
+  kind: FindingKind;
   id: string;
   summary: string;
   detail?: Record<string, unknown>;
@@ -79,6 +96,7 @@ export function runChecks(input: DoctorInputs): Finding[] {
     if (belongsToResource(u.acsId, guid)) continue;
     findings.push({
       check: 1,
+      kind: 'stale-identity',
       id: u.ourUserId,
       summary: `user ${u.ourUserId} holds an identity that does not belong to resource ${guid}`,
       detail: { acsIdPrefix: u.acsId.slice(0, 14) + '…', isSystem: u.isSystem },
@@ -90,12 +108,14 @@ export function runChecks(input: DoctorInputs): Finding[] {
   if (system.length === 0) {
     findings.push({
       check: 4,
+      kind: 'no-system-user',
       id: 'system',
       summary: 'no system user row found — cannot own replayed threads or read history as the backend',
     });
   } else if (!systemOnResource) {
     findings.push({
       check: 4,
+      kind: 'system-user-has-no-identity',
       id: system[0]!.ourUserId,
       summary: 'system user has no ACS identity on this resource — history is unrecoverable until one is minted',
     });
@@ -109,6 +129,7 @@ export function runChecks(input: DoctorInputs): Finding[] {
     if (onlySystem) {
       findings.push({
         check: 2,
+        kind: 'system-only-thread',
         id: threadId,
         summary: `thread ${threadId} has only the system identity as a participant — nobody else can reply`,
         detail: { participants: live.length },
@@ -126,6 +147,7 @@ export function runChecks(input: DoctorInputs): Finding[] {
     if (!sentAsSystem) continue;
     findings.push({
       check: 3,
+      kind: 'misattributed-message',
       id: m.messageId,
       summary: `message ${m.messageId} was sent as the system identity but metadata.originalSenderUserId names ${original}`,
       detail: { threadId: m.threadId, originalSenderUserId: original },
@@ -137,6 +159,7 @@ export function runChecks(input: DoctorInputs): Finding[] {
     if (!t.externalId) {
       findings.push({
         check: 5,
+        kind: 'thread-without-external-id',
         id: t.ourThreadId,
         summary: `database thread ${t.ourThreadId} has no externalId`,
       });
@@ -150,6 +173,7 @@ export function runChecks(input: DoctorInputs): Finding[] {
       if (dbExternal.has(id)) continue;
       findings.push({
         check: 5,
+        kind: 'acs-thread-not-in-db',
         id,
         summary: `ACS thread ${id} has no matching database row`,
       });
@@ -159,6 +183,7 @@ export function runChecks(input: DoctorInputs): Finding[] {
       if (!input.acsThreadIds.has(t.externalId)) {
         findings.push({
           check: 5,
+          kind: 'db-thread-not-in-acs',
           id: t.ourThreadId,
           summary: `database thread ${t.ourThreadId} points at ACS ${t.externalId}, which is not on this resource`,
         });

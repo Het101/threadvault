@@ -116,6 +116,8 @@ $ threadvault doctor
 threadvault doctor
   resource  aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
   endpoint  example.communication.azure.com
+  walked    7200 ACS thread(s), 41533 message(s), as 8:acs:aaaaaaaa-…_0000002c-…
+  against   812 identit(ies) and 7200 thread(s) on record
 
   [1] stale-identities         649
   [2] system-only-threads      7200
@@ -126,7 +128,28 @@ threadvault doctor
   - (1) user 4f3c… holds an identity that does not belong to resource aaaaaaaa-…
   - (2) thread 19:… has only the system identity as a participant — nobody else can reply
   … 14869 more (pass --json for the full list)
+
+  What to do
+
+  stale-identity  (649)
+    means   The user holds an ACS identity minted against a different resource.
+            It is not merely out of date, it is unusable: tokens cannot be
+            issued for it and the user cannot read or post anywhere on this
+            resource.
+    do      Mint a new identity on this resource for each affected user and
+            overwrite the stored one. Re-minting only where the field is empty
+            is what left 649 of these in place — a wrong identity and no
+            identity need the same repair.
+    check   Re-run doctor. Check 1 returns to ok once every stored identity
+            carries this resource GUID.
+  …
 ```
+
+The `walked` and `against` lines say what the run rests on, so `ok` means
+*examined and clean* rather than *found nothing, possibly because it looked at
+nothing*. Every finding comes with what it means, what to do and how to confirm
+it worked — once per kind of problem, not once per occurrence. `--json` carries
+the same guidance for anything reading it automatically.
 
 Exit codes: **0** clean · **1** findings · **2** could not run. Wire it into CI or a cron alert.
 

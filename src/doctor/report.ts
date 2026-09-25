@@ -1,4 +1,5 @@
 import { CHECKS, type Finding } from './checks.ts';
+import { adviceFor, type Advice } from './remedy.ts';
 
 /**
  * What the run actually looked at.
@@ -28,6 +29,8 @@ export type DoctorReport = {
   findings: Finding[];
   counts: Record<1 | 2 | 3 | 4 | 5, number>;
   scope: DoctorScope;
+  /** One entry per kind of finding present. Empty when the run was clean. */
+  advice: Advice[];
 };
 
 export function buildReport(
@@ -38,7 +41,7 @@ export function buildReport(
 ): DoctorReport {
   const counts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } as Record<1 | 2 | 3 | 4 | 5, number>;
   for (const f of findings) counts[f.check]++;
-  return { resourceGuid, host, findings, counts, scope };
+  return { resourceGuid, host, findings, counts, scope, advice: adviceFor(findings) };
 }
 
 /**
@@ -53,6 +56,45 @@ function scopeLines(scope: DoctorScope): string[] {
   ];
   if (scope.unreadable > 0) {
     out.push(`  unread    ${scope.unreadable} thread(s) ACS listed but would not open`);
+  }
+  return out;
+}
+
+/** Wrap to a fixed width so the advice reads as prose, not as one long line. */
+function wrap(text: string, width: number, indent: string): string[] {
+  const out: string[] = [];
+  let line = '';
+  for (const word of text.split(' ')) {
+    if (line && line.length + 1 + word.length > width) {
+      out.push(indent + line);
+      line = word;
+    } else {
+      line = line ? `${line} ${word}` : word;
+    }
+  }
+  if (line) out.push(indent + line);
+  return out;
+}
+
+/**
+ * The half of the report that was missing. A finding names a problem; this says
+ * what it means, what to do and how to know it worked — once per kind, however
+ * many findings of that kind there were.
+ */
+function adviceLines(advice: Advice[]): string[] {
+  if (advice.length === 0) return [];
+  const out = ['', '  What to do'];
+  for (const a of advice) {
+    out.push('', `  ${a.kind}  (${a.count})`);
+    for (const [label, text] of [
+      ['means ', a.means],
+      ['do    ', a.action],
+      ['check ', a.verify],
+    ] as const) {
+      const body = wrap(text, 72, '            ');
+      out.push(`    ${label}  ${body[0]?.trimStart() ?? ''}`);
+      for (const rest of body.slice(1)) out.push(rest);
+    }
   }
   return out;
 }
@@ -82,6 +124,7 @@ export function formatReport(report: DoctorReport): string {
   if (report.findings.length > shown.length) {
     lines.push(`  … ${report.findings.length - shown.length} more (pass --json for the full list)`);
   }
+  for (const line of adviceLines(report.advice)) lines.push(line);
   return lines.join('\n');
 }
 
