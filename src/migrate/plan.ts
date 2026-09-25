@@ -75,6 +75,45 @@ export async function migratePlan(
   return report;
 }
 
+function attributionRow(report: PlanReport): string {
+  const have = report.messages - report.messagesMissingOriginalSender;
+  return `${have} of ${report.messages}`;
+}
+
+/**
+ * The count alone is unreadable, and read wrongly it is alarming.
+ *
+ * `originalSenderUserId` is metadata that `migrate apply` writes during a
+ * replay. ACS does not store our user ids, so a first extract from a resource
+ * that has never been replayed carries none at all - every message "missing"
+ * it, which looks like total attribution loss and is simply how ACS works.
+ *
+ * A partial count is the real signal: it means some messages have the id and
+ * others lost it, which is the defect this tool was written for.
+ */
+function attributionNote(report: PlanReport): string | null {
+  const missing = report.messagesMissingOriginalSender;
+  if (report.messages === 0 || missing === 0) return null;
+
+  if (missing === report.messages) {
+    return [
+      'note: no message carries our own user id. Expected for a first `migrate',
+      '      extract`: ACS does not store it, and `migrate apply` is what writes',
+      '      it. A replay from this dump maps each old ACS id to one new identity,',
+      '      so attribution holds inside the estate - but the new identities are',
+      '      not linked to your users. Extract through `mirror backfill` if you',
+      '      need that link.',
+    ].join('\n');
+  }
+
+  return [
+    `WARNING: ${report.messages - missing} message(s) carry our user id and ${missing} do not.`,
+    '         A mixed dump means attribution was lost for some messages and not',
+    '         others. Replaying it attributes those to whoever runs the replay.',
+    '         Find out why before `migrate apply --commit`.',
+  ].join('\n');
+}
+
 export function formatPlan(report: PlanReport, targetResourceGuid?: string): string {
   // padEnd, then an unconditional space: a label longer than the column must
   // still separate from its value.
@@ -86,13 +125,15 @@ export function formatPlan(report: PlanReport, targetResourceGuid?: string): str
     row('  of those, ACS control messages', report.controlMessages),
     row('  replayable by apply', report.messages - report.controlMessages),
     row('unique ACS identities', report.uniqueAcsIds),
-    row('messages missing original sender', report.messagesMissingOriginalSender),
+    row('messages carrying our user id', attributionRow(report)),
     row('messages missing original time', report.messagesMissingOriginalCreatedOn),
     row('resource GUIDs in dump', report.resourceGuids.join(', ') || '(none parseable)'),
   ];
   if (targetResourceGuid) {
     lines.push(row(`stale ACS ids vs ${targetResourceGuid}`, report.staleAcsIds));
   }
+  const note = attributionNote(report);
+  if (note) lines.push('', note);
   return lines.join('\n');
 }
 
