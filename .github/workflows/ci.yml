@@ -64,14 +64,12 @@ jobs:
       - name: nothing but our own output
         run: |
           set -e
-          printf 'FOO=bar
-' > .env
+          echo 'FOO=bar' > .env
           out="$(node dist/cli.js --version 2>&1)"
           rm -f .env
-          if [ "$out" != "$(node -p "require('./package.json').version")" ]; then
-            echo "::error::--version printed more than the version:"
-            printf '%s
-' "$out"
+          want="$(node -p "require('./package.json').version")"
+          if [ "$out" != "$want" ]; then
+            echo "::error::--version printed more than just the version: $out"
             exit 1
           fi
 

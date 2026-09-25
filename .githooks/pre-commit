@@ -93,4 +93,19 @@ if echo "$staged" | grep -qE '\.(ts|json)$'; then
   npm run --silent test
 fi
 
+# --- 4. A broken workflow file removes its own checks ------------------------
+# A YAML error in .github/workflows does not fail CI. It fails the *run*, before
+# any job starts, so the required checks simply never report and the pull request
+# sits there looking fine. Cheapest place to catch that is here.
+if echo "$staged" | grep -qE '^\.github/.*\.ya?ml$'; then
+  echo "pre-commit: workflow yaml"
+  for f in $(echo "$staged" | grep -E '^\.github/.*\.ya?ml$'); do
+    [ -f "$f" ] || continue
+    node -e "require('yaml').parse(require('fs').readFileSync(process.argv[1],'utf8'))" "$f" || {
+      echo "pre-commit: $f is not valid YAML. CI would not run at all." >&2
+      exit 1
+    }
+  done
+fi
+
 exit 0
