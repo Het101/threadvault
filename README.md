@@ -49,7 +49,7 @@ npx threadvault doctor
 ```
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Het101/threadvault/main/docs/assets/doctor-output.png" alt="threadvault doctor output: five named checks, four clean, one reporting a thread whose only participant is the system identity" width="760">
+  <img src="https://raw.githubusercontent.com/Het101/threadvault/main/docs/assets/doctor-output.png" alt="threadvault doctor output: how much was walked and against what, then five named checks with four clean and one reporting an ACS thread that has no matching database row, then a What to do section explaining what that means, what to do about it and how to confirm it worked" width="760">
 </p>
 
 Or keep it around:
