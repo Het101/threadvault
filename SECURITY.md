@@ -51,6 +51,12 @@ CI fails the build on any **high or critical** advisory. These moderates are kno
 |---|---|---|
 | [GHSA-w5hq-g745-h8pq](https://github.com/advisories/GHSA-w5hq-g745-h8pq) — `uuid` missing buffer bounds check | `@azure/communication-chat` -> `@azure/communication-signaling` -> `uuid@8.3.2` | Not reachable. The bug needs `uuid` called with a caller-supplied `buf`; Threadvault never calls `uuid` and never uses the realtime signaling path at all — it only makes REST list/send calls. The only npm-offered fix is downgrading `@azure/communication-chat`, which would reintroduce the Node compatibility problems this project already resolved. |
 
+Snyk reaches the same conclusion independently and files it under *issues with
+no supported fix* ([SNYK-JS-UUID-16133035](https://security.snyk.io/vuln/SNYK-JS-UUID-16133035),
+CWE-1285, CVSS 6.3). It is recorded in [`.snyk`](https://github.com/Het101/threadvault/blob/main/.snyk)
+with the reasoning and a three-month expiry, so the acceptance lapses and gets
+looked at again rather than becoming permanent by neglect.
+
 Re-assessed whenever the Azure SDK is bumped. If you believe one of these *is* reachable, that is exactly the kind of report worth sending.
 
 ## Running it safely
