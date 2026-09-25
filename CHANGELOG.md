@@ -6,6 +6,60 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
+## [0.4.0] - 2026-09-25
+
+No behaviour changes. This release raises the minimum Node version and rebuilds
+what stands between a compromised dependency and the package you install.
+
+### Changed
+
+- **Node 22.12 or newer is now required** (was 22.0). `commander` 15 declares
+  the same floor, and 22.12.0 is where Node 22 entered LTS, so everything
+  earlier in that line is already unsupported upstream. If you are on 22.0-22.11
+  you are on a Node release that receives no fixes.
+- `commander` 12 -> 15, `dotenv` 16 -> 18.
+- dotenv 17 began announcing itself on every load. It is silenced, so the only
+  thing this tool writes is its own output. `--json` was never affected.
+
+### Security
+
+None of the following changes what the tool does. All of it changes how much
+you have to take on trust, which for something you point at production
+credentials is the more useful thing to be able to check.
+
+- **The release pipeline no longer holds write permissions it does not need.**
+  The workflow that publishes had `contents`, `id-token` and `issues` write at
+  the top level, so any job that file gained would have inherited the ability to
+  publish. Every workflow now floors at read, and the single job that publishes
+  asks for the rest itself.
+- **Workflows are audited by [zizmor](https://docs.zizmor.sh) as a required
+  check.** It found three things nothing else here looks for: five checkout
+  steps leaving the job's token in `.git/config`, the release job restoring a
+  cache that lower-privilege workflows can write to, and no Dependabot cooldown.
+- **Dependabot now waits 7 days** (14 for majors) before proposing a version.
+  Malicious releases are usually yanked within a day or two, so most are gone
+  before they reach a pull request.
+- **CI runners are monitored for outbound network traffic.** Every other check
+  reads code; a dependency that only misbehaves while it runs is invisible to
+  all of them, and that is the shape recent npm compromises have taken.
+- **The release job no longer installs its own package manager.** It ran
+  `npm install -g npm@latest` because Node 22 ships an npm too old for trusted
+  publishing. Node 24 ships a new enough one, so the step is gone, along with an
+  unreviewed input to the job holding the publishing identity.
+- **[OpenSSF Scorecard](https://github.com/Het101/threadvault/security/code-scanning)
+  and Dependency Review** run on every push and pull request. The Scorecard
+  findings that remain open are listed in SECURITY.md with the reason each one
+  is accepted, rather than left for you to wonder about.
+
+### Internal
+
+- Test coverage is measured and floored in CI, so it cannot quietly fall. Three
+  of the six defects found in the September audit were in paths nothing
+  exercised, and the suite was green throughout.
+- A malformed workflow file fails the run *before any job exists*, so required
+  checks never report and a pull request looks ready to merge. Staged workflow
+  YAML is now parsed in `pre-commit`.
+
 ## [0.3.1] - 2026-09-25
 
 ### Security
@@ -216,6 +270,7 @@ happens when you hold it wrong.
 Initial release: `probe`, `doctor`, `mirror backfill`, `migrate extract`,
 `migrate rehearse`, `migrate apply`.
 
+[0.4.0]: https://github.com/Het101/threadvault/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/Het101/threadvault/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Het101/threadvault/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/Het101/threadvault/compare/v0.2.3...v0.2.4
