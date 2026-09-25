@@ -1,5 +1,12 @@
-import 'dotenv/config';
+import { config as loadDotenv } from 'dotenv';
 import { Command } from 'commander';
+
+// `quiet` because dotenv 17 started announcing itself on every load. This is a
+// CLI whose output is read by people mid-incident and, with --json, by other
+// programs; it does not get to add a line of its own. Called here rather than
+// via `dotenv/config` only because the side-effect import takes no options —
+// every env read in this file happens inside an action handler, well after it.
+loadDotenv({ quiet: true });
 import { log, logError, logJson } from './log.ts';
 import type { PgClient } from './db/pg.ts';
 import type { DoctorInputs } from './doctor/checks.ts';

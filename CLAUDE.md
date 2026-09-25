@@ -12,7 +12,7 @@ Standalone CLI. Makes an Azure Communication Services chat resource disposable b
 
 ## Runtime
 
-- Node `>=22`. Node 18 is unsupported (`globalThis.crypto.randomUUID` is missing). Node 20 is unsupported because current Azure SDK packages require `>=22`.
+- Node `>=22.12.0`. Node 18 is unsupported (`globalThis.crypto.randomUUID` is missing). Node 20 is unsupported because current Azure SDK packages require `>=22`. 22.0–22.11 are unsupported because `commander` and Vite 8 both require 22.12, which is where Node 22 entered LTS.
 - TypeScript ESM. `tsx src/cli.ts` for dev, `tsup` for the published bin.
 - Tests: `vitest`. Fixtures are synthetic — lorem, never clinical text, never real names.
 

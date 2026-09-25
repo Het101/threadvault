@@ -57,6 +57,22 @@ jobs:
           node dist/cli.js migrate apply --help > /dev/null
           node dist/cli.js migrate verify --help > /dev/null
 
+      # dotenv 17 started printing a line on every load. It went to stderr, so
+      # --json survived, but it still put a dependency's voice into the output
+      # of a tool people read mid-incident. Silenced with `quiet`; this is what
+      # notices if a future bump gets loud again on either stream.
+      - name: nothing but our own output
+        run: |
+          set -e
+          echo 'FOO=bar' > .env
+          out="$(node dist/cli.js --version 2>&1)"
+          rm -f .env
+          want="$(node -p "require('./package.json').version")"
+          if [ "$out" != "$want" ]; then
+            echo "::error::--version printed more than just the version: $out"
+            exit 1
+          fi
+
   hygiene:
     runs-on: ubuntu-latest
     steps:
