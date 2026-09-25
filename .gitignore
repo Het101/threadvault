@@ -6,6 +6,14 @@ coverage/
 !.env.example
 *.jsonl
 acs-dump*/
+
+# A local threadvault.yml names the table and column layout of whatever
+# database it is pointed at, which for the people using this tool is a
+# production schema. Only the example belongs in the repo.
+threadvault.yml
+threadvault.yaml
+!threadvault.example.yml
+
 .threadvault/
 *.log
 .DS_Store

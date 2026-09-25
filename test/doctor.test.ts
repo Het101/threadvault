@@ -127,15 +127,50 @@ describe('runChecks', () => {
 });
 
 describe('report', () => {
+  const scope = {
+    readerAcsId: SYS,
+    acsThreads: 12,
+    acsMessages: 340,
+    identities: 7,
+    dbThreads: 12,
+    unreadable: 0,
+  };
+
   it('formats a clean report and maps findings to exit 1', () => {
-    const clean = buildReport(RESOURCE, 'example.communication.azure.com', []);
+    const clean = buildReport(RESOURCE, 'example.communication.azure.com', [], scope);
     expect(formatReport(clean)).toMatch(/clean/);
     expect(exitCode(clean, false)).toBe(0);
-    const dirty = buildReport(RESOURCE, 'example.communication.azure.com', [
-      { check: 1, id: USER, summary: 'stale' },
-    ]);
+    const dirty = buildReport(
+      RESOURCE,
+      'example.communication.azure.com',
+      [{ check: 1, id: USER, summary: 'stale' }],
+      scope,
+    );
     expect(exitCode(dirty, false)).toBe(1);
     expect(exitCode(null, true)).toBe(2);
+  });
+
+  // "ok" on a check means "no findings". Without the scope beside it there is
+  // no way to tell that from "no findings because almost nothing was read",
+  // which is the same trap the acsScanned bug set.
+  it('states what it walked, so a clean check can be read', () => {
+    const out = formatReport(buildReport(RESOURCE, 'h', [], scope));
+    expect(out).toMatch(/12 ACS thread\(s\), 340 message\(s\)/);
+    expect(out).toContain(SYS);
+    expect(out).toMatch(/7 identit\(ies\) and 12 thread\(s\) on record/);
+    expect(out).not.toMatch(/unread/);
+  });
+
+  it('says so when a thread was listed but would not open', () => {
+    const out = formatReport(buildReport(RESOURCE, 'h', [], { ...scope, unreadable: 3 }));
+    expect(out).toMatch(/unread\s+3 thread\(s\)/);
+  });
+
+  it('names the absence of a reader rather than leaving the line blank', () => {
+    const out = formatReport(
+      buildReport(RESOURCE, 'h', [], { ...scope, readerAcsId: null, acsThreads: 0, acsMessages: 0 }),
+    );
+    expect(out).toContain('no usable identity');
   });
 });
 
