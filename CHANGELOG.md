@@ -6,6 +6,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
+## [Unreleased]
+
+### Added
+
+- **`doctor` now says what to do about what it finds.** Running it against a
+  real resource turned up two orphan threads, and the report said only that
+  they existed. Working out what that meant, whether it mattered and what to do
+  took longer than the scan — the wrong way round for something people run
+  while an incident is open.
+
+  Each finding now carries three things: what it means in terms of consequence,
+  what to do about it, and how to confirm it worked. Grouped by kind of problem
+  rather than by occurrence, so 649 stale identities produce one paragraph and
+  not 649. `--json` carries the same guidance, so a monitor can surface it too.
+
+  No remedy runs a command that writes. Several of these have more than one
+  reasonable answer — an orphan thread can be adopted or discarded, and only
+  someone who can read it knows which — so the decision stays with a person.
+
 ## [0.6.0] - 2026-09-25
 
 Makes `migrate rehearse` usable on the resource it was designed for. With this

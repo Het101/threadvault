@@ -143,7 +143,7 @@ describe('report', () => {
     const dirty = buildReport(
       RESOURCE,
       'example.communication.azure.com',
-      [{ check: 1, id: USER, summary: 'stale' }],
+      [{ check: 1, kind: 'stale-identity' as const, id: USER, summary: 'stale' }],
       scope,
     );
     expect(exitCode(dirty, false)).toBe(1);
