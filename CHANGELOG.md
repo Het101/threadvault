@@ -6,7 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
-## [Unreleased]
+## [0.7.0] - 2026-09-25
+
+`doctor` now tells you what to do about what it finds, and the release process
+has the gate it was missing.
 
 ### Added
 
@@ -410,6 +413,7 @@ happens when you hold it wrong.
 Initial release: `probe`, `doctor`, `mirror backfill`, `migrate extract`,
 `migrate rehearse`, `migrate apply`.
 
+[0.7.0]: https://github.com/Het101/threadvault/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Het101/threadvault/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Het101/threadvault/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Het101/threadvault/compare/v0.3.1...v0.4.0
