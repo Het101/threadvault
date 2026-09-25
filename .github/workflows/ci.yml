@@ -45,6 +45,10 @@ jobs:
       - run: node dist/cli.js --help
       # Every subcommand must at least be reachable in the built bundle. A
       # broken import only surfaces when the command is actually invoked.
+      #
+      # Reachable is the floor, not the bar. --help passes whether or not the
+      # command works, which is how two commands shipped unusable. The step
+      # after this one runs a real command and reads what came out.
       - name: smoke every command
         run: |
           set -e
@@ -61,6 +65,20 @@ jobs:
       # --json survived, but it still put a dependency's voice into the output
       # of a tool people read mid-incident. Silenced with `quiet`; this is what
       # notices if a future bump gets loud again on either stream.
+      # A command that actually does its job, through the built binary, with
+      # assertions on the output. This is what would have caught an entry
+      # point that stopped parsing, a lazy import that failed to resolve, or a
+      # report that silently stopped reporting.
+      - name: a real command, not just --help
+        run: |
+          set -e
+          out="$(node dist/cli.js migrate plan --from-jsonl test/fixtures/smoke.jsonl)"
+          printf "%s" "$out"
+          echo "$out" | grep -q "threads:  *1" || { echo "::error::plan did not count the thread"; exit 1; }
+          echo "$out" | grep -q "participants:  *1" || { echo "::error::plan did not count the participant"; exit 1; }
+          echo "$out" | grep -q "messages:  *1" || { echo "::error::plan did not count the message"; exit 1; }
+          echo "$out" | grep -q "messages carrying our user id:  *1 of 1" || { echo "::error::plan lost attribution reporting"; exit 1; }
+
       - name: nothing but our own output
         run: |
           set -e

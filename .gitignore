@@ -5,6 +5,9 @@ coverage/
 .env.*
 !.env.example
 *.jsonl
+# except the synthetic one CI runs a real command against. Lorem only, never
+# anything resembling a chat message.
+!test/fixtures/*.jsonl
 acs-dump*/
 
 # A local threadvault.yml names the table and column layout of whatever

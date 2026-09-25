@@ -1,5 +1,6 @@
 import { config as loadDotenv } from 'dotenv';
 import { Command } from 'commander';
+import { pathToFileURL } from 'node:url';
 
 // `quiet` because dotenv 17 started announcing itself on every load. This is a
 // CLI whose output is read by people mid-incident and, with --json, by other
@@ -553,7 +554,24 @@ migrate
     },
   );
 
-program.parseAsync(process.argv).catch((e) => {
-  logError(e instanceof Error ? e.message : String(e));
-  process.exit(2);
-});
+/**
+ * Exported so tests can drive the same commander program a user drives.
+ *
+ * Every command was wired up here and tested nowhere: this file sat at 0%
+ * coverage while the suite was green. Two commands shipped unusable as a
+ * result - `migrate rehearse` demanded identities that could not be obtained,
+ * and nothing noticed, because the only thing CI ran against it was --help.
+ */
+export { program };
+
+// Parse only when this file is the program being run. Without the guard,
+// importing it in a test would consume the test runner argv and exit.
+const invokedDirectly =
+  !!process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (invokedDirectly) {
+  program.parseAsync(process.argv).catch((e: unknown) => {
+    logError(e instanceof Error ? e.message : String(e));
+    process.exit(2);
+  });
+}

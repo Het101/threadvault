@@ -25,6 +25,25 @@ changes may land in a minor release; they are always called out below.
   reasonable answer — an orphan thread can be adopted or discarded, and only
   someone who can read it knows which — so the decision stays with a person.
 
+### Fixed
+
+- **CI proves commands work, not that they print help.** Three releases shipped
+  with a command that did not function, and the suite was green for all three.
+  `src/cli.ts` — every command’s wiring, the largest file in the project —
+  sat at 0% coverage, and the only thing CI ran against each command was
+  `--help`, which passes whether or not the command works.
+
+  The commander program is now exported and driven by tests exactly as a user
+  drives it, through `parseAsync`, asserting on output and exit codes. Twelve
+  of them, including one that fails against the pre-0.6.0 `rehearse` and passes
+  against the current one. CI additionally runs a real `migrate plan` through
+  the built binary and checks the numbers it prints.
+
+  Coverage 67% to 76%; `cli.ts` 0% to 43%. The floor moved up with it.
+
+  Nothing about the published binary changes: it parses argv when it is the
+  program being run, and the smoke test proves that on every commit.
+
 ## [0.6.0] - 2026-09-25
 
 Makes `migrate rehearse` usable on the resource it was designed for. With this

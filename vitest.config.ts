@@ -14,10 +14,10 @@ export default defineConfig({
       // September audit were in paths nothing exercised, and the suite was
       // green throughout.
       thresholds: {
-        statements: 62,
-        branches: 56,
-        functions: 57,
-        lines: 62,
+        statements: 74,
+        branches: 67,
+        functions: 69,
+        lines: 76,
       },
     },
   },

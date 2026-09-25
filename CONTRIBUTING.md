@@ -191,6 +191,39 @@ Security problems do not go in issues. See [SECURITY.md](SECURITY.md).
 
 Maintainers only.
 
+### The gate, before any of the steps below
+
+Three versions shipped with a command that did not work, and the suite was
+green for all three. `migrate rehearse` demanded two ACS identities that a
+user of a fresh resource had no way to create, so its success path was
+unreachable; `migrate plan` reported every message as missing attribution for
+a condition that is normal. Neither is a bug a unit test finds, because in
+both cases the code did exactly what it was written to do.
+
+What let them through was CI proving each command *responds to `--help`*.
+Help passes whether or not the command works.
+
+So, before tagging:
+
+- [ ] **`npm run test:coverage` passes**, including the floor. `test/cli.test.ts`
+      drives the real commander program the way a user does; if you added a
+      command, it belongs there too.
+- [ ] **Every command you changed has been run for real** — not `--help`, the
+      command. Against a real ACS resource if it touches ACS. The
+      [runbook](docs/first-real-run.md) is the safe order to do that in.
+- [ ] **You read the output as a stranger would.** Does a number need
+      explaining? Does `ok` say what it covered? Would a first-time user draw
+      the right conclusion? This is the check no test performs, and it is the
+      one that caught both of the defects above.
+- [ ] **The version bump is derived, not chosen.** A `feat` since the last tag
+      means minor. Read the commits rather than guessing.
+- [ ] **`CHANGELOG.md` says what a user will notice**, not what the diff did.
+
+If a command cannot be exercised because it needs a resource you do not have,
+say so in the pull request rather than shipping it as though it were covered.
+
+### Steps
+
 1. Update `CHANGELOG.md`: rename `[Unreleased]` to the version and date.
 2. Bump `version` in `package.json` and the `.version()` call in `src/cli.ts`.
 3. Commit, then `git tag -a vX.Y.Z -m "threadvault X.Y.Z"` and
