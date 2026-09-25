@@ -532,7 +532,17 @@ Issues and pull requests welcome. Please don't include real chat content, connec
 | [Post-mortem](https://github.com/Het101/threadvault/blob/main/docs/postmortem-acs-chat-migration.md) | The incident that produced this tool, in full |
 | [CODE_OF_CONDUCT.md](https://github.com/Het101/threadvault/blob/main/CODE_OF_CONDUCT.md) | How we behave here |
 
-Threadvault is pre-1.0. The commands and their guarantees are stable; flags may still move, and anything that does will be called out in the changelog.
+Threadvault is pre-1.0. The commands and their guarantees are stable; flags may
+still move, and anything that does will be called out in the changelog.
+
+Every command has been run against real infrastructure rather than mocks —
+production and UAT ACS resources, a live Twilio account, and Postgres 17.
+[What is verified](https://github.com/Het101/threadvault/blob/main/ROADMAP.md#what-is-verified)
+lists which command against what, and what each run turned up: nine defects,
+none of which the test suite caught.
+
+1.0 waits on something the author cannot tick — somebody else migrating a real
+estate with it.
 
 ## License
 
