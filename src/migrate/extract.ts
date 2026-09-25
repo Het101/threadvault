@@ -10,6 +10,8 @@ export type ExtractOpts = {
   threadIds?: string[];
   /** Threads walked at once. Messages inside a thread always stay serial. */
   concurrency?: number;
+  /** Write no message bodies. See ExtractOpts in mirror/extract.ts. */
+  withoutBodies?: boolean;
 };
 
 /**
@@ -26,6 +28,7 @@ export async function migrateExtract(opts: ExtractOpts): Promise<{
     readerAcsId: opts.readerAcsId,
     threadIds: opts.threadIds,
     concurrency: opts.concurrency,
+    withoutBodies: opts.withoutBodies,
   });
 
   let threads = 0;
@@ -42,7 +45,13 @@ export async function migrateExtract(opts: ExtractOpts): Promise<{
   }
 
   await sinkJsonl(counted(), opts.outPath);
-  log(`Extract complete. Threads: ${threads}, Participants: ${participants}, Messages: ${messages}`);
+  const bodyNote = opts.withoutBodies
+    ? ' No message bodies were read: this dump is for plan and verify, and apply will refuse it.'
+    : '';
+  log(
+    `Extract complete. Threads: ${threads}, Participants: ${participants}, ` +
+      `Messages: ${messages}.${bodyNote}`,
+  );
   return { threads, participants, messages };
 }
 

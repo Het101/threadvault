@@ -35,6 +35,14 @@ export type Rec =
       editedOn: string | null;
       deletedOn: string | null;
       metadata: Record<string, string> | null;
+      /**
+       * Set by `migrate extract --no-bodies`. The record is real and every
+       * other field is true; only `content` was never read from ACS.
+       *
+       * Absent from every ordinary extract and from every dump written
+       * before the flag existed, so old dumps stay valid input.
+       */
+      bodiesOmitted?: true;
     };
 
 /**

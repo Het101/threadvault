@@ -18,6 +18,18 @@ type BufferedMessage = {
   senderAcsId: string | null;
 };
 
+async function* refuseOmittedBodies(src: AsyncIterable<Rec>): AsyncGenerator<Rec> {
+  for await (const rec of src) {
+    if (rec.kind === 'message' && rec.bodiesOmitted) {
+      throw new Error(
+        'This extract was written with --no-bodies, so it holds no message text to replay. ' +
+          'It is for `migrate plan` and `migrate verify`. Re-extract without the flag to apply it.',
+      );
+    }
+    yield rec;
+  }
+}
+
 export type ApplyOpts = {
   connectionString: string;
   sourceStream: AsyncIterable<Rec>;
@@ -124,8 +136,15 @@ export async function migrateApply(opts: ApplyOpts): Promise<ApplyStats> {
 
   const ledger = opts.ledger ?? ReplayLedger.ephemeral();
 
+  // A --no-bodies extract carries every field except the one apply sends.
+  // Replaying it would post an empty message for each real one, in the right
+  // thread, from the right person, at the right time: convincing, and not
+  // recoverable without re-extracting. Refused at the stream so that both the
+  // dry run and the commit path hit it, and the dry run hits it first.
+  const source = refuseOmittedBodies(opts.sourceStream);
+
   if (!opts.commit) {
-    for await (const rec of opts.sourceStream) {
+    for await (const rec of source) {
       if (rec.kind === 'thread') {
         if (ledger.isDone(rec.legacyThreadId)) stats.threadsResumed++;
         else stats.threads++;
@@ -230,7 +249,7 @@ export async function migrateApply(opts: ApplyOpts): Promise<ApplyStats> {
   log(`Starting replay as migrator ${migratorId}`);
 
   try {
-    for await (const rec of opts.sourceStream) {
+    for await (const rec of source) {
       if (rec.kind === 'thread') {
         await flushThread();
         if (ledger.isDone(rec.legacyThreadId)) {

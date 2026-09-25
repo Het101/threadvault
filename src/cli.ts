@@ -323,7 +323,8 @@ migrate
   .requiredOption('--out <path>', 'JSONL output path')
   .option('--reader-acs-id <id>', 'ACS identity to read as')
   .option('--concurrency <n>', 'threads walked at once (messages stay serial)', '4')
-  .action(async (opts: { out: string; readerAcsId?: string; concurrency?: string }) => {
+  .option('--no-bodies', 'omit message text; the dump then works with plan and verify, not apply')
+  .action(async (opts: { out: string; readerAcsId?: string; concurrency?: string; bodies?: boolean }) => {
     try {
       const cs = await acsConnectionString();
       if (!cs) {
@@ -340,6 +341,7 @@ migrate
         readerAcsId: opts.readerAcsId,
         outPath: opts.out,
         concurrency: Math.max(1, Number(opts.concurrency ?? 4)),
+        withoutBodies: opts.bodies === false,
       });
     } catch (e) {
       logError(e instanceof Error ? e.message : String(e));
