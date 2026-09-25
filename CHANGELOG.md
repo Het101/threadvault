@@ -6,6 +6,36 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
+## [Unreleased]
+
+### Added
+
+- **`mirror backfill --from-twilio`.** Threadvault can now mirror Twilio
+  Conversations into your own Postgres, alongside ACS.
+
+  The mirror is the part of this tool that was never about Azure: putting the
+  estate somewhere you own, keyed to your own user ids, so the vendor becomes
+  disposable. That argument holds for any chat provider. A Twilio walk produces
+  the same records an ACS walk produces, so `migrate plan`, `migrate verify` and
+  the Postgres schema work on it unchanged — no provider abstraction was added,
+  because `AsyncIterable<Rec>` has been the interface since the first dump.
+
+  Two things are deliberately different, and both are because Twilio does not
+  have the problem this tool was written for. There is no resource guard: a
+  Twilio credential names one account and the walk only reads. And there is no
+  identity minting: Twilio takes the author as a plain string, where ACS makes
+  you send as an identity you hold a token for and record the real sender in
+  metadata — which is the root of misattribution, of stale identities, and of
+  most of what `doctor` looks for.
+
+  No SDK. The `twilio` helper library is megabytes of voice, video and TwiML
+  for what is three GET endpoints, and this reads them over `fetch`.
+
+  **Not yet run against a live Twilio account.** It is covered by tests against
+  a faked HTTP layer — auth, pagination, partial failures, SMS participants with
+  no identity — but every ACS path in this tool has been run against real Azure
+  and this has not. Treat it accordingly, and say so if you try it.
+
 ## [0.7.0] - 2026-09-25
 
 `doctor` now tells you what to do about what it finds, and the release process

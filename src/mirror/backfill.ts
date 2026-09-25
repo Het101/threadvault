@@ -1,4 +1,6 @@
 import { extractAcs } from './extract.ts';
+import { extractTwilio } from '../twilio/extract.ts';
+import type { TwilioAuth } from '../twilio/client.ts';
 import { sinkPostgres } from './sink-postgres.ts';
 import { sinkJsonl } from './sink-jsonl.ts';
 import { sourceJsonlFile } from './source-jsonl.ts';
@@ -11,6 +13,15 @@ export type MirrorOpts = {
   db?: PgClient;
   jsonlPath?: string;
   fromJsonl?: string;
+  /**
+   * Read Twilio Conversations instead of ACS.
+   *
+   * The mirror is the part of this tool that is not about Azure at all: it
+   * puts the estate somewhere you own so the vendor becomes disposable. That
+   * argument holds for any chat provider, so the source is swappable and the
+   * rest of the pipeline is untouched.
+   */
+  twilio?: TwilioAuth;
   threadIds?: string[];
   /** Threads walked at once. Messages inside a thread always stay serial. */
   concurrency?: number;
@@ -29,6 +40,12 @@ export async function mirrorBackfill(opts: MirrorOpts): Promise<MirrorStats | vo
 
   if (opts.fromJsonl) {
     stream = sourceJsonlFile(opts.fromJsonl);
+  } else if (opts.twilio) {
+    stream = extractTwilio({
+      auth: opts.twilio,
+      conversationSids: opts.threadIds,
+      concurrency: opts.concurrency,
+    });
   } else {
     if (!opts.connectionString || !opts.readerAcsId) {
       throw new Error('ACS connection string and readerAcsId are required for backfill (unless --from-jsonl is used).');

@@ -90,6 +90,22 @@ export function acsConnectionString(): string {
   );
 }
 
+/**
+ * Twilio credentials, by name only.
+ *
+ * An API key (SK…) is preferred over the account auth token: it can be
+ * revoked on its own, where the auth token is the whole account.
+ */
+export function twilioAuth(): { accountSid: string; username?: string; password: string } | null {
+  const accountSid = (process.env.TWILIO_ACCOUNT_SID || '').trim();
+  const keySid = (process.env.TWILIO_API_KEY_SID || '').trim();
+  const keySecret = (process.env.TWILIO_API_KEY_SECRET || '').trim();
+  const token = (process.env.TWILIO_AUTH_TOKEN || '').trim();
+  if (!accountSid && !keySid && !token) return null;
+  if (keySid && keySecret) return { accountSid, username: keySid, password: keySecret };
+  return { accountSid, password: token };
+}
+
 export function acsExpectResource(): string {
   return (process.env.ACS_EXPECT_RESOURCE || '').trim().toLowerCase();
 }
