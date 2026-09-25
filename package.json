@@ -1,6 +1,6 @@
 {
   "name": "threadvault",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Mirror Azure Communication Services or Twilio Conversations chat into Postgres, so the chat provider is disposable.",
   "type": "module",
   "main": "dist/cli.js",
