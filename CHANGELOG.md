@@ -6,28 +6,82 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
-## [Unreleased]
+## [0.5.0] - 2026-09-25
+
+The first release shaped by running this tool against a real production ACS
+resource rather than against its own fixtures. Every change below is something
+that run exposed: two of them are reports that were technically correct and
+unreadable, and one is the reason the run could happen at all.
+
+Upgrade if you use `doctor` or `migrate plan`. Their output changes.
 
 ### Added
 
-- **`migrate extract --no-bodies`.** Message bodies are the only thing this
-  tool ever writes to disk that the source database would call sensitive.
-  `doctor` already discards them at the SDK boundary and `plan` and `verify`
-  never read them, so `extract` was the single reason the read-and-analyse
-  path could not be pointed at a resource whose contents are not allowed to
-  leave it. With the flag the extract carries every thread, participant,
-  identity, timestamp and attribution field and no message text, which is
-  everything `plan` and `verify` need.
+- **`migrate extract --no-bodies`.** Message bodies are the only thing this tool
+  writes to disk that the source would call sensitive. `doctor` already discards
+  them at the SDK boundary so no caller can hold one, and `plan` and `verify`
+  never read them — `extract` was the single reason the read-and-analyse path
+  could not be pointed at a resource whose contents are not allowed to leave it.
 
-  `migrate apply` refuses such a dump - during the dry run, before `--commit`
-  is reached, because the dry run is what you run first. Replaying one would
-  post an empty message for each real one, in the right thread, from the right
-  person, at the right time: convincing, and not recoverable without
-  re-extracting.
+  With the flag the extract carries every thread, participant, identity,
+  timestamp and attribution field, and no message text. That is exactly what
+  `plan` and `verify` consume, so the whole analysis runs unchanged.
+
+  `migrate apply` refuses such a dump, during the dry run, before `--commit` is
+  reached. Replaying one would post an empty message for each real one — in the
+  right thread, from the right person, at the right time. Convincing, and not
+  recoverable without re-extracting.
 
 - **[A runbook for the first run against a real resource](docs/first-real-run.md).**
-  Ordered so stages 1-5 cannot write to ACS at all, and says which numbers in
-  the plan report must be zero and what a non-zero one means.
+  Ordered so stages 1–5 cannot write to ACS at all, and the first thing that
+  writes needs a resource you are willing to delete.
+
+### Changed
+
+- **`doctor` now says what it walked**, not only what it found:
+
+  ```
+    walked    34 ACS thread(s), 168 message(s), as 8:acs:<reader>
+    against   167 identit(ies) and 32 thread(s) on record
+    unread    3 thread(s) ACS listed but would not open
+  ```
+
+  A check reading `ok` means *no findings*. Without those lines there was no way
+  to tell that from *no findings because almost nothing was read* — the same
+  trap as the `acsScanned` bug fixed in 0.3.0. The `unread` line appears only
+  when non-zero, because "clean" and "unread" are different things the old
+  report silently merged.
+
+  The reader identity appearing there also removes a step: `migrate extract`
+  requires one, and `doctor` had been resolving it and keeping it to itself.
+
+- **`migrate plan` reports attribution in a way that can be acted on.** The row
+  `messages missing original sender: 168` was technically correct and read as
+  total attribution loss. `originalSenderUserId` is metadata that `migrate
+  apply` writes during a replay; ACS does not store it, so a resource that has
+  never been replayed has none at all. The number was structural and said
+  nothing about the data — while `doctor` called attribution clean on the same
+  estate minutes earlier.
+
+  It now reads `messages carrying our user id: N of M`, and the report
+  distinguishes three situations: all present says nothing, **none** present is
+  explained as expected on a first extract along with what it costs, and
+  **some** present prints a `WARNING` — that is the mixed case, where
+  attribution really was lost for a subset, and it was previously
+  indistinguishable from the other two.
+
+### Fixed
+
+- **A local `threadvault.yml` is now gitignored.** It names the table and column
+  layout of whatever database it points at, which for anyone using this tool is
+  a production schema. Only `threadvault.example.yml` belongs in a repository.
+
+- **The runbook said the missing-sender count "must be 0".** Wrong in the way
+  most likely to stop a first-time user: it described a completely normal
+  reading as a defect. Rewritten around what the report now explains, with
+  figures from a real run in place of invented ones, and a cross-check step —
+  `doctor` and `plan` walk the same estate by different routes and their totals
+  should agree.
 
 ## [0.4.0] - 2026-09-25
 
@@ -293,6 +347,7 @@ happens when you hold it wrong.
 Initial release: `probe`, `doctor`, `mirror backfill`, `migrate extract`,
 `migrate rehearse`, `migrate apply`.
 
+[0.5.0]: https://github.com/Het101/threadvault/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Het101/threadvault/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/Het101/threadvault/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Het101/threadvault/compare/v0.2.4...v0.3.0
