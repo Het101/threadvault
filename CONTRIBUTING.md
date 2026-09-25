@@ -119,6 +119,27 @@ whole time — `src/cli.ts` was at 0%, and two of those bugs lived in it.
 If you add a module, add the test that would fail without it. If you find the
 floor in your way, the answer is a test, not a lower floor.
 
+### Changing a workflow
+
+CI audits `.github/` with [zizmor](https://docs.zizmor.sh) as a required check,
+so a workflow change can fail the build without any TypeScript being wrong. Run
+it the same way CI does before you push:
+
+```bash
+pipx run zizmor==1.30.1 --persona=regular .github/
+```
+
+If it flags something you meant to do, add it to `.github/zizmor.yml` with the
+reason written out. Do not silence it with a bare ignore.
+
+Two rules that are not negotiable, because both have bitten real projects:
+
+- **Never interpolate `${{ }}` into a `run:` body.** It is substituted before
+  the shell sees it, so anything attacker-controlled becomes shell code. Pass
+  it through `env:` and read it as `"$VAR"`.
+- **Pin actions to a commit SHA**, with the version in a trailing comment. A
+  tag can be repointed at anything.
+
 ## The domain rules
 
 These are earned, and a PR that breaks one will be sent back even if the tests pass:

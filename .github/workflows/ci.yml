@@ -20,6 +20,8 @@ jobs:
       # controls the action's repo can repoint v7 at new code, and it runs here
       # with our token. The trailing comment is the human-readable version.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ matrix.node }}
@@ -50,12 +52,23 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+
+      # Static analysis for the workflows themselves. CI is the most privileged
+      # code in the repo — it holds the token that can publish — and it is the
+      # part nothing else reviews. zizmor catches template injection, tokens
+      # left in .git/config, cache poisoning and unpinned actions. Pinned, for
+      # the same reason everything else here is.
+      - name: audit the workflows
+        run: pipx run zizmor==1.30.1 --persona=regular .github/
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       # The pre-commit hook can be bypassed with --no-verify. This cannot.
       - name: scan the tree for committed secrets

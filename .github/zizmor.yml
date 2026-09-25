@@ -1,0 +1,16 @@
+# zizmor audits these workflows for GitHub Actions vulnerabilities — template
+# injection, credential persistence, cache poisoning and so on. CI runs it, so
+# anything not listed here is a finding that has to be fixed rather than
+# argued with.
+
+rules:
+  adhoc-packages:
+    ignore:
+      # Two deliberate `npm install`s in the release job, neither of which a
+      # lockfile could cover:
+      #   - `npm -g` at a pinned version, because Node 22 ships an npm too old
+      #     for trusted publishing and the upgrade has to happen before `npm ci`
+      #     would even be meaningful.
+      #   - the freshly-built .tgz, installed to smoke-test the exact artifact
+      #     that is about to be published. That is the point of the step.
+      - release.yml

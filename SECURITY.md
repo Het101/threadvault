@@ -59,6 +59,38 @@ looked at again rather than becoming permanent by neglect.
 
 Re-assessed whenever the Azure SDK is bumped. If you believe one of these *is* reachable, that is exactly the kind of report worth sending.
 
+## How the supply chain is checked
+
+This tool asks you to point it at credentials, so the thing you are really
+trusting is the release pipeline, not the source. What guards it:
+
+| Tool | Runs | Catches |
+|---|---|---|
+| [CodeQL](https://github.com/Het101/threadvault/security/code-scanning) | push, PR, weekly | Injection, unsafe parsing, and the rest of the standard JS query pack |
+| [zizmor](https://docs.zizmor.sh) | every PR, as a required check | Vulnerabilities in the workflows themselves: template injection, tokens left in `.git/config`, cache poisoning, unpinned actions |
+| [Dependency Review](https://github.com/Het101/threadvault/blob/main/.github/workflows/dependency-review.yml) | every PR | A dependency added in that PR carrying a known high advisory, or a licence this project cannot ship |
+| [OpenSSF Scorecard](https://github.com/Het101/threadvault/security/code-scanning) | push to `main`, weekly | Posture drift — branch protection weakened, a permission widened, an action unpinned |
+| [Snyk](https://app.snyk.io) and `npm audit` | every PR | Known advisories in the dependency tree |
+| Socket | every PR | Install scripts, network access, and other behaviour newly introduced by a dependency |
+
+Supporting decisions, all of which are in the repo rather than in someone's head:
+
+- **Every action is pinned to a commit SHA**, not a tag. A tag can be moved; a SHA cannot.
+- **Dependabot waits 7 days** (14 for majors) before proposing a new version. Malicious releases are usually yanked within a day or two, so the cooldown means most of them are gone before they ever reach a pull request.
+- **Workflows default to `contents: read`.** The three jobs that need more ask for it themselves, so a step added later inherits nothing.
+- **The release job does not use the Actions cache.** That cache is writable by lower-privilege workflows, and this is the job holding the npm publishing identity.
+- **Publishing uses npm trusted publishing over OIDC** with provenance, and the final `npm publish` is staged — a human approves it with a second factor. There is no long-lived npm token to steal.
+
+### Scorecard findings that are open on purpose
+
+Scorecard's score is not treated as a target. Three checks are knowingly not met:
+
+- **Code-Review / Branch-Protection (requires approvals).** Threadvault currently has one maintainer. Requiring an approving review would mean nothing could merge at all. Everything else in the ruleset is on: linear history, signed commits, required status checks, no force-push, no deletion.
+- **Fuzzing.** Not integrated. The parsers worth fuzzing are small and covered by unit tests; this will get revisited before 1.0.
+- **CII Best Practices badge.** Not yet applied for.
+
+`Maintained` also scores 0 because the repository is less than 90 days old. That one fixes itself.
+
 ## Running it safely
 
 - Point it at a **non-production** resource first. `migrate rehearse` exists so you can prove the four durability goals on something disposable.
