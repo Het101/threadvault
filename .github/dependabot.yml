@@ -4,6 +4,13 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Wait before proposing a brand-new version. Most malicious releases are
+    # yanked within a couple of days of publication, and a week is long enough
+    # that a compromised package is usually gone before it reaches a PR here.
+    # Longer for majors, which need reading anyway.
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
     open-pull-requests-limit: 5
     groups:
       # The Azure SDK packages have to move together: a partial bump is how the
@@ -20,5 +27,7 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: "ci"

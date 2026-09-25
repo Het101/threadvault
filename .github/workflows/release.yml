@@ -5,35 +5,47 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# Read-only floor, so a job added to this file later starts with nothing.
 permissions:
-  # Write, because this workflow drafts the GitHub release for the tag.
-  contents: write
-  # Required for npm provenance: npm uses this to attest that the package was
-  # built from this repo, at this commit, by this workflow. The npm page then
-  # shows where it came from, which matters more than usual for a tool people
-  # point at production credentials.
-  id-token: write
-  # To open the issue that tells a human a release is waiting for them.
-  issues: write
+  contents: read
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      # Write, because this job drafts the GitHub release for the tag.
+      contents: write
+      # Required for npm provenance: npm uses this to attest that the package
+      # was built from this repo, at this commit, by this workflow. The npm
+      # page then shows where it came from, which matters more than usual for
+      # a tool people point at production credentials.
+      id-token: write
+      # To open the issue that tells a human a release is waiting for them.
+      issues: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
-          cache: npm
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+          # Caching is off on purpose. The Actions cache is writable by
+          # workflows with fewer permissions than this one, and this is the
+          # job that publishes. Restoring their entries here would let a PR
+          # run influence a signed release.
 
       # Node 22 ships npm 10, which has no OIDC support. Trusted publishing
       # needs npm 11.5.1 or newer, so without this the publish step falls back
       # to looking for a token that no longer exists.
+      # Pinned, not `@latest`: this job holds the OIDC identity that can publish
+      # to npm, so the package manager it runs is a supply-chain input like any
+      # other. Bump deliberately; nothing automated watches this line.
       - name: npm new enough for trusted publishing
         run: |
           set -e
-          npm install -g npm@latest
+          npm install -g npm@12.1.0
           npm --version
 
       - run: npm ci
