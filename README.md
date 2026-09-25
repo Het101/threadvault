@@ -24,7 +24,7 @@ Twilio lets you set a message author outright, so most of what `doctor` looks
 for cannot happen there.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Het101/threadvault/main/docs/assets/data-flow.png" alt="Azure Communication Services chat flowing into your own PostgreSQL database" width="760">
+  <img src="https://raw.githubusercontent.com/Het101/threadvault/main/docs/assets/data-flow.png" alt="Azure Communication Services and Twilio Conversations both flowing through Threadvault into your own PostgreSQL database" width="760">
 </p>
 
 Mirror once and ACS becomes a cache. Every message lands in **your** database under **your** user IDs, with the **original** timestamps — so the day you need a new resource, you replay instead of negotiate.
