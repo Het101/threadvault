@@ -45,10 +45,15 @@ export async function* extractAcs(
         if (t.id) threads.add(t.id);
       }
     } catch (e) {
-      logError('listChatThreads failed', {
-        error: e instanceof Error ? e.message : String(e),
-      });
-      return;
+      // Fatal, not empty. Returning here reported "Threads: 0" and exited 0,
+      // so a revoked key or an identity with no access looked exactly like a
+      // resource with nothing in it - and the caller would believe it.
+      // A failure to read any thread is not a finding about the estate.
+      throw new Error(
+        `Could not list threads for ${opts.readerAcsId}: ` +
+          (e instanceof Error ? e.message : String(e)),
+        { cause: e },
+      );
     }
   }
 

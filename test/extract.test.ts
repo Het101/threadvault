@@ -3,6 +3,8 @@ import type { Rec } from '../src/mirror/types.ts';
 
 /** threadId -> how it behaves when read. */
 const behaviour: Record<string, 'ok' | 'no-properties' | 'no-messages'> = {};
+/** Set when the walk should not even be able to list. */
+let listFails: string | null = null;
 
 vi.mock('../src/acs/client.ts', () => ({
   createAcs: vi.fn().mockImplementation(() => ({
@@ -10,6 +12,7 @@ vi.mock('../src/acs/client.ts', () => ({
     endpoint: 'https://mock.communication.azure.com',
     chatFor: vi.fn().mockResolvedValue({
       listChatThreads: async function* () {
+        if (listFails) throw new Error(listFails);
         for (const id of Object.keys(behaviour)) yield { id };
       },
       getChatThreadClient: (threadId: string) => ({
@@ -51,9 +54,37 @@ const collect = async (concurrency: number): Promise<Rec[]> => {
 };
 
 beforeEach(() => {
+  listFails = null;
   for (const k of Object.keys(behaviour)) delete behaviour[k];
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
   vi.spyOn(console, 'log').mockImplementation(() => undefined);
+});
+
+/**
+ * Found by running the Twilio walk, which had been written from this one, and
+ * getting "Threads: 0, Participants: 0, Messages: 0" with exit 0 out of an
+ * account that had refused the request with 401.
+ *
+ * The same shape was here: a revoked key, or a reader identity with no access,
+ * produced the same answer as a resource with nothing in it. Nobody noticed
+ * because nobody had run `mirror backfill` against a credential that failed.
+ */
+describe('a walk that cannot list anything', () => {
+  it('throws rather than reporting an empty estate', async () => {
+    listFails = 'Unauthorized';
+    const out: unknown[] = [];
+    await expect(
+      (async () => {
+        for await (const r of extractAcs({
+          connectionString: 'endpoint=https://mock/;accesskey=k',
+          readerAcsId: '8:acs:reader',
+        })) {
+          out.push(r);
+        }
+      })(),
+    ).rejects.toThrow(/Could not list threads for 8:acs:reader.*Unauthorized/s);
+    expect(out).toEqual([]);
+  });
 });
 
 describe('extractAcs', () => {

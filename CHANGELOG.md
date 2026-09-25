@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
+## [Unreleased]
+
+### Fixed
+
+- **A walk that cannot list anything no longer reports an empty estate.**
+  `mirror backfill` caught a failure to list threads, logged it, and carried on
+  to print `Threads: 0, Participants: 0, Messages: 0` and exit `0`. A revoked
+  key, an identity with no access, and a resource with nothing in it all
+  produced the same answer, and nothing in the output told them apart.
+
+  Found by pointing the new Twilio walk at a real trial account, which refuses
+  the Conversations API with `401 This feature is not available on a Trial
+  account`. The tool said the account was empty.
+
+  The same code was in the ACS walk — the Twilio one had been written from it —
+  so `mirror backfill` against ACS with a bad credential did this too, and had
+  since the beginning. Both now fail with the reason and exit `2`. A failure to
+  read one thread is still tolerated; a failure to read any is not a finding
+  about the estate.
+
 ## [0.8.0] - 2026-09-25
 
 Threadvault is no longer only for Azure. `mirror backfill` can read Twilio
