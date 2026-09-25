@@ -6,7 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
-## [Unreleased]
+## [0.8.0] - 2026-09-25
+
+Threadvault is no longer only for Azure. `mirror backfill` can read Twilio
+Conversations, and the Postgres mirror, `migrate plan` and `migrate verify`
+work on the result unchanged.
+
+**The Twilio reader has not been run against a live Twilio account.** Every ACS
+path in this tool has been run against real Azure; this has not. It is covered
+by tests against a faked HTTP layer — auth, pagination, partial failures, SMS
+participants with no identity — which is the same standard the ACS tests meet,
+but it is not the same as having done it. Read the caveat, not just the feature.
 
 ### Added
 
@@ -35,6 +45,16 @@ changes may land in a minor release; they are always called out below.
   a faked HTTP layer — auth, pagination, partial failures, SMS participants with
   no identity — but every ACS path in this tool has been run against real Azure
   and this has not. Treat it accordingly, and say so if you try it.
+
+### Changed
+
+- **The `doctor` screenshot shows what `doctor` prints.** It predated the scope
+  lines added in 0.5.0 and the remediation section added in 0.7.0, so the most
+  looked-at picture in the README was two releases behind and undersold the
+  tool. Its alt text was worse than the image: it described a different check
+  firing, so anyone reading with a screen reader got a different report from
+  everyone else. Background is transparent now, so it sits on GitHub in either
+  colour scheme.
 
 ## [0.7.0] - 2026-09-25
 
@@ -443,6 +463,7 @@ happens when you hold it wrong.
 Initial release: `probe`, `doctor`, `mirror backfill`, `migrate extract`,
 `migrate rehearse`, `migrate apply`.
 
+[0.8.0]: https://github.com/Het101/threadvault/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Het101/threadvault/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Het101/threadvault/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Het101/threadvault/compare/v0.4.0...v0.5.0
