@@ -12,6 +12,13 @@ updates:
       default-days: 7
       semver-major-days: 14
     open-pull-requests-limit: 5
+    ignore:
+      # @types/node tracks the *minimum* supported runtime, not the latest
+      # release. On 26 the compiler would happily accept an API that does not
+      # exist on the Node 22.12 this package declares support for, and say
+      # nothing. Bump this deliberately, together with engines.node.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       # The Azure SDK packages have to move together: a partial bump is how the
       # Node 20 compatibility mess started.

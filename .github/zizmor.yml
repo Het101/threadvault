@@ -6,11 +6,8 @@
 rules:
   adhoc-packages:
     ignore:
-      # Two deliberate `npm install`s in the release job, neither of which a
-      # lockfile could cover:
-      #   - `npm -g` at a pinned version, because Node 22 ships an npm too old
-      #     for trusted publishing and the upgrade has to happen before `npm ci`
-      #     would even be meaningful.
-      #   - the freshly-built .tgz, installed to smoke-test the exact artifact
-      #     that is about to be published. That is the point of the step.
+      # One deliberate `npm install` in the release job: the freshly-built
+      # .tgz, installed to smoke-test the exact artifact about to be
+      # published. That is the point of the step, and no lockfile could
+      # cover it.
       - release.yml
