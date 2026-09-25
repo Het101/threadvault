@@ -46,7 +46,10 @@ changes may land in a minor release; they are always called out below.
   read one thread is still tolerated; a failure to read any is not a finding
   about the estate.
 
-## [Unreleased]
+## [0.9.1] - 2026-09-26
+
+`migrate verify` now works. Until this release it reported `verified clean 0`
+against a correct replay, which made it worse than not running it.
 
 ### Fixed
 
@@ -584,6 +587,7 @@ happens when you hold it wrong.
 Initial release: `probe`, `doctor`, `mirror backfill`, `migrate extract`,
 `migrate rehearse`, `migrate apply`.
 
+[0.9.1]: https://github.com/Het101/threadvault/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/Het101/threadvault/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Het101/threadvault/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Het101/threadvault/compare/v0.6.0...v0.7.0
