@@ -1,7 +1,7 @@
 # Roadmap
 
 What Threadvault is for, what is coming, and what it will not do. Dated
-2026-09-24; this file is updated when the plan changes, not when it slips.
+2026-09-26; this file is updated when the plan changes, not when it slips.
 
 ## The goal
 
@@ -16,6 +16,9 @@ than an incident.
 - [x] ESLint, alongside typecheck and tests, enforced by CI and a pre-commit hook
 - [x] Releases build, verify and stage from CI; a human approves them with their
       own 2FA, and the package carries npm provenance
+- [x] **Every command exercised against real infrastructure**, not mocks. See
+      [what is verified](#what-is-verified) below for which command against
+      what, and what each run turned up
 
 ## Now
 
@@ -27,13 +30,39 @@ than an incident.
 **1.0 means someone other than the author has migrated a real estate with it.**
 That is the bar; polish is not a substitute for it.
 
-- [ ] An end-to-end run against a real non-production ACS resource, written up
-      in full, including what went wrong
+- [x] An end-to-end run against a real non-production ACS resource, written up
+      in full, including what went wrong — done 2026-09-26 against a UAT
+      resource: `plan`, `apply --commit`, `verify`. It found that `verify` did
+      not work at all
 - [ ] A scheduled or watching mode for `doctor`, so drift is caught as it
       happens rather than during the next migration
 - [ ] Finish the `--from-mirror` identity story: replaying from the Postgres
       mirror still needs host user IDs mapped back onto new identities
 - [ ] Stable flags. After 1.0 they follow semver
+
+## What is verified
+
+The claim this project makes is that it has been run, not merely tested. That
+is worth being specific about, because "verified" is easy to say.
+
+| Command | Run against | What it found |
+|---|---|---|
+| `probe` | production ACS, UAT ACS | — |
+| `doctor` | production ACS + production Postgres, read-only | two orphan threads in the estate; and that a report of five `ok`s said nothing about what it had covered |
+| `migrate extract` | production ACS, `--no-bodies` | that it was the only command writing message bodies to disk, which blocked any production read |
+| `migrate plan` | that extract, and a synthetic one | that it reported normal data as total attribution loss |
+| `migrate rehearse` | a disposable dev ACS resource | that it needed two identities nobody could create |
+| `migrate apply --commit` | UAT ACS | — |
+| `migrate verify` | UAT ACS, same replay | that it reported `verified clean 0` against a correct replay |
+| `mirror backfill` → Twilio | a live Twilio account | that a 401 was reported as an empty estate, exit 0 — in the ACS walk too, since the beginning |
+| `mirror backfill` → Postgres | Postgres 17 | that a non-UUID user id died with a raw driver error mid-write, and that the identity count counted upserts |
+
+Nine defects. None was caught by the test suite, because in every case the code
+did exactly what it was written to do and the mocks agreed with it. Three times
+a test was found asserting something the real system cannot do.
+
+What this does **not** yet include is anyone other than the author. That is the
+1.0 bar above, and it is deliberately not something the author can tick.
 
 ## Later
 
