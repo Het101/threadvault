@@ -26,7 +26,7 @@ so nothing is lost by making this a step you take on purpose.
 
 Node **22 or newer** to run Threadvault — the Azure SDK will not install on 20.
 
-To *develop* it you want **Node 22.12 or newer**: the test toolchain pulls Vite 8, which requires `^20.19.0 || >=22.12.0`, and `.npmrc` sets `engine-strict=true`, so `npm install` on Node 22.0–22.11 fails with a confusing peer-dependency error. The published package itself only needs `>=22`; this floor applies to contributors, not users.
+**Node 22.12 or newer**, for developing and for running it. The test toolchain pulls Vite 8 (`^20.19.0 || >=22.12.0`) and `commander` requires the same, and `.npmrc` sets `engine-strict=true`, so `npm install` on Node 22.0–22.11 fails with a confusing peer-dependency error. 22.12 is where Node 22 entered LTS, so nothing earlier in that line is supported upstream either.
 
 ```bash
 npm run dev -- doctor --help   # run from source, no build step

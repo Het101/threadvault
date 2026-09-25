@@ -63,7 +63,7 @@ threadvault doctor
 so npm ignores the word and answers about itself. `npm threadvault --version`
 prints *npm's* version, which looks like an answer and is not one.
 
-**Node 22 or newer.** The current Azure SDK will not install on 20.
+**Node 22.12 or newer.** The current Azure SDK will not install on 20, and `commander` requires 22.12 — which is where Node 22 entered LTS, so anything earlier in the 22 line is already unsupported upstream.
 
 Published with [npm provenance](https://www.npmjs.com/package/threadvault), so you can verify the package was built by CI from this repository rather than uploaded by hand.
 
