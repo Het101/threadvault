@@ -1,0 +1,25 @@
+# Snyk policy file. Records assessed, accepted findings so the dashboard shows
+# what still needs a decision rather than what has already had one.
+#
+# Every entry carries an expiry. An ignore that never expires becomes a thing
+# nobody revisits, and the reasoning below is only true until the Azure SDK
+# moves.
+version: v1.25.0
+
+ignore:
+  SNYK-JS-UUID-16133035:
+    - '*':
+        reason: >-
+          Not reachable. The advisory requires uuid to be called with a
+          caller-supplied `buf` argument. Threadvault never calls uuid: it
+          arrives transitively through @azure/communication-chat ->
+          @azure/communication-signaling, which is the realtime notification
+          path, and this tool only makes REST list/send calls. Snyk classifies
+          it as having no supported fix; the only change npm offers is
+          downgrading @azure/communication-chat to 1.5.1, which reintroduces the
+          Node compatibility problems resolved in v0.2.0. Re-assess whenever the
+          Azure SDK is bumped. See SECURITY.md.
+        created: 2026-09-25T00:00:00.000Z
+        expires: 2026-12-25T00:00:00.000Z
+
+patch: {}
