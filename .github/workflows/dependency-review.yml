@@ -1,0 +1,26 @@
+name: dependency-review
+
+# Blocks a pull request that introduces a vulnerable or badly-licensed
+# dependency, before it reaches main. Dependabot reports what is already in the
+# tree and npm audit gates the build; neither stops a bad dependency arriving in
+# the first place, which is the cheapest moment to refuse one.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # Matches the npm audit gate, so the two cannot disagree.
+          fail-on-severity: high
+          # This project is Apache-2.0. A copyleft dependency would force a
+          # licence change on everyone who installs it.
+          deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-3.0
+          comment-summary-in-pr: on-failure
