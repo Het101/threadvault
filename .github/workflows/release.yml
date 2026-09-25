@@ -166,8 +166,13 @@ jobs:
             echo "## Approve"
             echo ""
             echo '```bash'
+            echo "# 1. publish the package"
             echo "npm stage view $sid       # confirm it is the right build"
             echo "npm stage approve $sid    # your 2FA — a passkey opens a browser"
+            echo ""
+            echo "# 2. publish the release notes — a separate step, and easy to miss."
+            echo "#    Skip it and npm has the new version while GitHub still shows the old"
+            echo "#    one as Latest."
             echo "gh release edit $GITHUB_REF_NAME --draft=false --latest"
             echo '```'
             echo ""
@@ -207,8 +212,11 @@ jobs:
             echo "and the GitHub release is drafted. Neither is public until you say so."
             echo ""
             echo '```bash'
+            echo "# 1. publish the package"
             echo "npm stage view $sid       # confirm it is the right build"
             echo "npm stage approve $sid    # your 2FA"
+            echo ""
+            echo "# 2. publish the release notes, which npm approval does not do"
             echo "gh release edit $GITHUB_REF_NAME --draft=false --latest"
             echo '```'
             echo ""
