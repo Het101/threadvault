@@ -125,6 +125,20 @@ describe('the HTTP layer', () => {
   });
 });
 
+/**
+ * An async iterable that fails the moment it is read, the way a dead endpoint
+ * does. Written once: a generator that only throws has no yield, and the
+ * alternative - an unreachable `yield` after the `throw` - is dead code that
+ * CodeQL is right to flag.
+ */
+// eslint-disable-next-line require-yield
+async function* failing(message: string): AsyncGenerator<never, void, undefined> {
+  throw new Error(message);
+}
+
+/** An async iterable that yields nothing, without pretending to fail. */
+async function* empty(): AsyncGenerator<never, void, undefined> {}
+
 /** A session stub, for the walk itself. */
 function session(opts: { messages?: unknown[]; participants?: unknown[] } = {}) {
   return {
@@ -281,12 +295,9 @@ describe('a walk that goes wrong keeps what it read', () => {
     const recs = await walk({
       auth,
       session: {
-        conversations: async function* () {
-          throw new Error('401 Unauthorized');
-          yield undefined as never;
-        },
-        participants: async function* () {},
-        messages: async function* () {},
+        conversations: () => failing('401 Unauthorized'),
+        participants: empty,
+        messages: empty,
       },
     });
     // Nothing yielded, and no throw: the caller gets an empty walk and the
@@ -306,11 +317,8 @@ describe('a walk that goes wrong keeps what it read', () => {
         conversations: async function* () {
           yield { sid: 'CH1', friendly_name: 'a', date_created: null };
         },
-        participants: async function* () {},
-        messages: async function* () {
-          throw new Error('500 Internal Server Error');
-          yield undefined as never;
-        },
+        participants: empty,
+        messages: () => failing('500 Internal Server Error'),
       } as never,
     });
     expect(recs.map((r) => r.kind)).toEqual(['thread']);
@@ -327,8 +335,8 @@ describe('a walk that goes wrong keeps what it read', () => {
           listed = true;
           yield { sid: 'SHOULD-NOT-APPEAR', friendly_name: null, date_created: null };
         },
-        participants: async function* () {},
-        messages: async function* () {},
+        participants: empty,
+        messages: empty,
       } as never,
     });
 
