@@ -18,6 +18,11 @@ ACS gives you no history export, and every identity it mints is scoped to one re
 
 Threadvault is that walk and that replay, already written, already survived.
 
+The mirror also reads **Twilio Conversations**, because "put the estate in a
+database you own" is not an Azure argument. The identity machinery below is:
+Twilio lets you set a message author outright, so most of what `doctor` looks
+for cannot happen there.
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/Het101/threadvault/main/docs/assets/data-flow.png" alt="Azure Communication Services chat flowing into your own PostgreSQL database" width="760">
 </p>
@@ -218,14 +223,16 @@ SMS or WhatsApp are identified by their binding address. The field names are
 byte-compatible with dumps taken before Twilio was supported, so read that one
 as *the provider's own identifier for the sender*.
 
-> **Read this before you rely on it.** The Twilio reader has been run end to
-> end — the built binary, over HTTP, against a server speaking the Conversations
-> wire format, with pagination forced on every collection — and it produced a
-> dump matching known fixtures exactly. What it has **not** done is run against a
-> live Twilio account. Twilio does not offer Conversations on trial accounts, so
-> that needs a paid one. Everything ACS-side in this tool has been run against
-> real Azure. If you run this against real Twilio data,
-> [tell us what happened](https://github.com/Het101/threadvault/issues).
+> **Verified against a live Twilio account.** Three conversations were created
+> with known contents — 6 participants and 7 messages, one conversation
+> deliberately left empty — walked with the built binary, and `migrate plan`
+> returned 3 / 6 / 7 and 4 unique identities. The empty conversation survived,
+> sequence ids came from Twilio's own ordinals, timestamps were Twilio's rather
+> than stamped locally, and the fixtures were deleted afterwards.
+>
+> Twilio does **not** offer the Conversations API on trial accounts; it answers
+> `401 … not available on a Trial account`. A paid account is needed to use this
+> at all, which is worth knowing before you try.
 
 ## Migrating to a new resource
 

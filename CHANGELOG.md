@@ -46,6 +46,55 @@ changes may land in a minor release; they are always called out below.
   read one thread is still tolerated; a failure to read any is not a finding
   about the estate.
 
+## [0.9.0] - 2026-09-25
+
+The Twilio reader has now been run against a live Twilio account, and a defect
+that made any failed walk look like an empty estate is fixed — on the ACS path
+as well, where it had been since the beginning.
+
+### Fixed
+
+- **A walk that cannot list anything no longer reports an empty estate.**
+  `mirror backfill` caught a failure to list threads, logged it, and carried on
+  to print `Threads: 0, Participants: 0, Messages: 0` and exit `0`. A revoked
+  key, an identity with no access, and a resource with nothing in it all
+  produced the same answer.
+
+  Found by pointing the Twilio walk at real accounts, which produced three
+  different 401s in one evening — a trial account that does not offer
+  Conversations, a suspended account, and a bad credential. All three said
+  "your estate is empty". The same code was in the ACS walk, which the Twilio
+  one had been written from, so `mirror backfill` against ACS with a bad
+  credential has done this since the beginning.
+
+  Both now fail with the reason and exit `2`. A failure to read one thread is
+  still tolerated; a failure to read any is not a finding about the estate.
+
+### Added
+
+- **`TWILIO_BASE_URL`.** Points the Conversations client at a different host —
+  Twilio runs regional endpoints, and an account pinned to Ireland or Australia
+  answers on its own. Plain `http` is refused unless the host is loopback, as
+  that URL carries the credential and the message bodies.
+
+### Changed
+
+- **The Twilio reader is verified against a live account.** Three conversations
+  with known contents — 6 participants, 7 messages, one conversation
+  deliberately empty — walked with the built binary. `migrate plan` returned
+  3 / 6 / 7 and 4 unique identities, which is the right answer twice over: six
+  participant records but four distinct people, because one identity was in all
+  three conversations. The empty conversation survived, sequence ids came from
+  Twilio's ordinals and timestamps from Twilio rather than being stamped
+  locally. Fixtures were deleted afterwards and the account left as found.
+
+  Worth knowing before you try: Twilio does **not** offer the Conversations API
+  on trial accounts. It answers `401 … not available on a Trial account`.
+
+- **`migrate plan`'s attribution note no longer says "ACS"** when the dump did
+  not come from ACS. It explained a Twilio dump in terms of a provider that was
+  not involved.
+
 ## [0.8.0] - 2026-09-25
 
 Threadvault is no longer only for Azure. `mirror backfill` can read Twilio
@@ -503,6 +552,7 @@ happens when you hold it wrong.
 Initial release: `probe`, `doctor`, `mirror backfill`, `migrate extract`,
 `migrate rehearse`, `migrate apply`.
 
+[0.9.0]: https://github.com/Het101/threadvault/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Het101/threadvault/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Het101/threadvault/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Het101/threadvault/compare/v0.5.0...v0.6.0

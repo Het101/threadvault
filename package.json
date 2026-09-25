@@ -1,7 +1,7 @@
 {
   "name": "threadvault",
-  "version": "0.8.0",
-  "description": "Mirror Azure Communication Services chat into Postgres so the ACS resource is disposable.",
+  "version": "0.9.0",
+  "description": "Mirror Azure Communication Services or Twilio Conversations chat into Postgres, so the chat provider is disposable.",
   "type": "module",
   "main": "dist/cli.js",
   "bin": {
@@ -36,6 +36,8 @@
     "azure",
     "acs",
     "communication-services",
+    "twilio",
+    "twilio-conversations",
     "chat",
     "postgres",
     "migration",
