@@ -157,9 +157,11 @@ program
       let acsMessages: DoctorInputs['acsMessages'] = [];
       let acsThreadIds = new Set<string>();
       let acsScanned = false;
+      let readerAcsId: string | null = null;
+      let unreadable = 0;
       if (walkAcs && cs) {
         const { scanAcs } = await lazy.scan();
-          const scan = await scanAcs({
+        const scan = await scanAcs({
           connectionString: cs,
           users,
           knownThreadIds: threads.map((t) => t.externalId).filter((id): id is string => !!id),
@@ -169,6 +171,8 @@ program
         acsParticipants = scan.acsParticipants;
         acsMessages = scan.acsMessages;
         acsThreadIds = scan.acsThreadIds;
+        readerAcsId = scan.readerAcsId;
+        unreadable = scan.unreadable;
         // Only true if a usable identity actually walked the resource. This
         // was set unconditionally, so a scan that found no reader at all still
         // counted as "I looked" — and check 5 then reported every thread in the
@@ -184,9 +188,6 @@ program
           );
           process.exit(2);
         }
-        if (!wantJson && scan.unreadable) {
-          log(`  ${scan.unreadable} thread(s) unreadable with the chosen identity`);
-        }
       }
 
       const { runChecks } = await lazy.checks();
@@ -200,7 +201,14 @@ program
         acsScanned,
       });
       const { buildReport, formatReport, exitCode } = await lazy.report();
-      const report = buildReport(resourceGuid, host, findings);
+      const report = buildReport(resourceGuid, host, findings, {
+        readerAcsId,
+        acsThreads: acsThreadIds.size,
+        acsMessages: acsMessages.length,
+        identities: users.length,
+        dbThreads: threads.length,
+        unreadable,
+      });
       if (wantJson) {
         logJson(report);
       } else {
