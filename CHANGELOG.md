@@ -6,7 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
-## [Unreleased]
+## [0.6.0] - 2026-09-25
+
+Makes `migrate rehearse` usable on the resource it was designed for. With this
+release every command in the tool has been run against a real Azure resource
+rather than against its own fixtures.
 
 ### Added
 
@@ -368,6 +372,7 @@ happens when you hold it wrong.
 Initial release: `probe`, `doctor`, `mirror backfill`, `migrate extract`,
 `migrate rehearse`, `migrate apply`.
 
+[0.6.0]: https://github.com/Het101/threadvault/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Het101/threadvault/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Het101/threadvault/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/Het101/threadvault/compare/v0.3.0...v0.3.1
