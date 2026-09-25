@@ -6,6 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
+## [Unreleased]
+
+### Added
+
+- **`migrate rehearse --mint`.** Rehearse needs two ACS identities, and a
+  brand-new resource has none. ACS creates identities only through its API
+  — there is no portal screen for it — so rehearsing against a fresh target
+  meant writing a script first, which is the one thing a rehearsal is meant to
+  save you from. The command was effectively unusable on exactly the kind of
+  resource it exists for.
+
+  `--mint` creates the two identities it needs and removes them again at the
+  end, including when an assertion fails. Identities passed in with
+  `--system-acs-id` / `--non-system-acs-id` are never deleted: only ones the
+  run created. `--non-system-our-user-id` now defaults to a random UUID, since
+  it exists only to be asserted on.
+
+  Verified against a real Azure resource: four assertions passed, one thread
+  created and removed, two identities created and removed, nothing else in the
+  resource touched.
+
 ## [0.5.0] - 2026-09-25
 
 The first release shaped by running this tool against a real production ACS

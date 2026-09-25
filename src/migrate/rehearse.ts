@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { createAcs, probeResource } from '../acs/client.ts';
 import { isKnownGuid } from '../acs/identity.ts';
 import { listParticipantIds } from '../acs/read.ts';
@@ -19,10 +20,21 @@ import { resolveSentAt, resolveOriginalSenderUserId } from '../acs/identity.ts';
 export async function migrateRehearse(opts: {
   connectionString: string; // The NEW target resource connection string
   targetResourceGuid: string;
-  systemAcsId: string;
-  nonSystemAcsId: string;
-  nonSystemOurUserId: string;
+  /** Omit when `mint` is set: two identities are created and then removed. */
+  systemAcsId?: string;
+  nonSystemAcsId?: string;
+  /** The UUID attribution is asserted against. Defaults to a random one. */
+  nonSystemOurUserId?: string;
   keep?: boolean;
+  /**
+   * Create the two identities this needs, then delete them again.
+   *
+   * A fresh target resource has no identities, and ACS only creates them
+   * through the API - there is no portal for it. Without this, rehearsing
+   * against a new resource requires writing a script first, which is the one
+   * thing a rehearsal is supposed to save you from.
+   */
+  mint?: boolean;
 }): Promise<void> {
   const probe = await probeResource(opts.connectionString);
   if (!isKnownGuid(probe.guid)) {
@@ -35,7 +47,28 @@ export async function migrateRehearse(opts: {
   }
 
   const acs = createAcs(opts.connectionString);
-  const sysChat = await acs.chatFor(opts.systemAcsId);
+
+  // Tracked separately from the ids in use: only identities this run created
+  // may be deleted at the end. One passed in belongs to the caller.
+  const minted: { communicationUserId: string }[] = [];
+  async function identityFor(given: string | undefined, what: string): Promise<string> {
+    if (given) return given;
+    if (!opts.mint) {
+      throw new Error(`--${what} is required (or pass --mint to create one for this run)`);
+    }
+    const u = await acs.identity.createUser();
+    minted.push(u);
+    return u.communicationUserId;
+  }
+
+  const systemAcsId = await identityFor(opts.systemAcsId, "system-acs-id");
+  const nonSystemAcsId = await identityFor(opts.nonSystemAcsId, "non-system-acs-id");
+  const nonSystemOurUserId = opts.nonSystemOurUserId ?? randomUUID();
+  if (minted.length) {
+    log(`rehearse: minted ${minted.length} identity(ies) for this run; they are removed at the end`);
+  }
+
+  const sysChat = await acs.chatFor(systemAcsId);
 
   // 1. Create a thread
   const threadRes = await sysChat.createChatThread({ topic: 'Rehearsal Thread' });
@@ -47,8 +80,8 @@ export async function migrateRehearse(opts: {
     const tc = sysChat.getChatThreadClient(threadId);
     await tc.addParticipants({
       participants: [
-        { id: { communicationUserId: opts.systemAcsId } },
-        { id: { communicationUserId: opts.nonSystemAcsId } }
+        { id: { communicationUserId: systemAcsId } },
+        { id: { communicationUserId: nonSystemAcsId } }
       ]
     });
 
@@ -64,7 +97,7 @@ export async function migrateRehearse(opts: {
       content: 'Rehearsal message',
     }, {
       metadata: {
-        originalSenderUserId: opts.nonSystemOurUserId,
+        originalSenderUserId: nonSystemOurUserId,
         originalCreatedOn: originalTime,
         replayed: 'true'
       }
@@ -84,12 +117,12 @@ export async function migrateRehearse(opts: {
 
     // Check assertion 2: sender
     const resolvedSender = resolveOriginalSenderUserId({ metadata: msg.metadata });
-    if (resolvedSender !== opts.nonSystemOurUserId) {
-      throw new Error(`Assertion 2 failed: sender did not resolve to ${opts.nonSystemOurUserId}`);
+    if (resolvedSender !== nonSystemOurUserId) {
+      throw new Error(`Assertion 2 failed: sender did not resolve to ${nonSystemOurUserId}`);
     }
 
     // Check assertion 3: non-system participant can send message
-    const nonSysChat = await acs.chatFor(opts.nonSystemAcsId);
+    const nonSysChat = await acs.chatFor(nonSystemAcsId);
     const nonSysTc = nonSysChat.getChatThreadClient(threadId);
     await nonSysTc.sendMessage({
       content: 'I can reply!'
@@ -97,11 +130,21 @@ export async function migrateRehearse(opts: {
 
     log('rehearse: all 4 assertions passed.');
   } finally {
+    // Only ever the thread this run created. Nothing else in the resource is
+    // listed, touched or removed.
     if (!opts.keep && threadId) {
       await sysChat.deleteChatThread(threadId);
       log(`rehearse: cleaned up thread ${threadId}`);
     } else if (threadId) {
       log(`rehearse: kept thread ${threadId}`);
+    }
+    // Identities go after the thread, and only ones minted here. A failure to
+    // remove one must not mask the assertion failure that brought us here.
+    for (const u of minted) {
+      await acs.identity.deleteUser(u).catch(() => undefined);
+    }
+    if (minted.length && !opts.keep) {
+      log(`rehearse: removed ${minted.length} minted identity(ies)`);
     }
   }
 }

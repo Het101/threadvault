@@ -292,7 +292,8 @@ migrate
   .option('--non-system-acs-id <id>', 'non-system ACS identity')
   .option('--non-system-our-user-id <id>', 'non-system OUR UUID')
   .option('--keep', 'do not delete the rehearsed thread')
-  .action(async (opts: { systemAcsId?: string; nonSystemAcsId?: string; nonSystemOurUserId?: string; keep?: boolean }) => {
+  .option('--mint', 'create the identities this needs, then remove them (for an empty target)')
+  .action(async (opts: { systemAcsId?: string; nonSystemAcsId?: string; nonSystemOurUserId?: string; keep?: boolean; mint?: boolean }) => {
     try {
       // rehearse writes to ACS, so it takes the same guard as apply.
       const targetResourceGuid = await acsExpectResource();
@@ -305,8 +306,11 @@ migrate
         logError('ACS_CONNECTION_STRING is not set');
         process.exit(2);
       }
-      if (!opts.systemAcsId || !opts.nonSystemAcsId || !opts.nonSystemOurUserId) {
-        logError('Missing required options for rehearse: --system-acs-id, --non-system-acs-id, --non-system-our-user-id');
+      // A fresh target resource has no identities and ACS only creates them
+      // through the API, so demanding them up front made rehearse unusable on
+      // exactly the resource it is meant for.
+      if (!opts.mint && (!opts.systemAcsId || !opts.nonSystemAcsId)) {
+        logError('rehearse needs --system-acs-id and --non-system-acs-id, or --mint to create them for this run');
         process.exit(2);
       }
       log('Starting rehearse...');
@@ -318,6 +322,7 @@ migrate
         nonSystemAcsId: opts.nonSystemAcsId,
         nonSystemOurUserId: opts.nonSystemOurUserId,
         keep: opts.keep,
+        mint: opts.mint,
       });
     } catch (e) {
       logError(e instanceof Error ? e.message : String(e));
