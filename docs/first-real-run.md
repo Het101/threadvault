@@ -203,20 +203,43 @@ ACS_EXPECT_RESOURCE=<the NEW resource's GUID>
 ```
 
 Both, or neither. If you change one and not the other the command refuses to
-run — which is the guard working, not a failure.
+run — which is the guard working, not a failure. Run `probe` once after the
+swap to confirm the two agree.
 
 ```bash
-npx threadvault migrate rehearse \
-  --system-acs-id "8:acs:<new-guid>_..." \
-  --non-system-acs-id "8:acs:<new-guid>_..." \
-  --non-system-our-user-id "<your own UUID for that user>"
+npx threadvault migrate rehearse --mint
 ```
 
-It creates one thread, adds both participants, sends a message as each, reads
-them back, and checks the four things that matter: the thread exists, both
-participants are on it, each message is attributed to the right person, and the
-original timestamp survived in metadata. Then it deletes the thread unless you
-pass `--keep`.
+### What `--mint` is for
+
+Rehearse needs two ACS identities, and a brand-new resource has none. ACS only
+creates identities through its API — there is no portal screen for it — so
+without `--mint` you would have to write a script before you could run the
+command whose entire purpose is to save you from writing scripts.
+
+`--mint` creates the two it needs and removes them again at the end, including
+when an assertion fails. If you already have identities in the target, pass
+`--system-acs-id` and `--non-system-acs-id` instead; **identities you pass in
+are never deleted**, only ones this run created.
+
+### What it touches
+
+It creates one thread, adds the two participants, sends a message as each,
+reads them back, and then deletes that thread. Nothing else in the resource is
+listed, read or removed — the only deletion is of the thread id it just
+created.
+
+```
+Starting rehearse...
+rehearse: minted 2 identity(ies) for this run; they are removed at the end
+rehearse: all 4 assertions passed.
+rehearse: cleaned up thread 19:acsV2_...@thread.v2
+rehearse: removed 2 minted identity(ies)
+```
+
+The four assertions: the thread exists, both participants are on it, each
+message resolves to the right person, and the original timestamp survived in
+metadata. Pass `--keep` to leave the thread in place and inspect it yourself.
 
 **If rehearse fails, stop.** A real `migrate apply` cannot do anything rehearse
 could not.
