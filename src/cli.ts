@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 loadDotenv({ quiet: true });
 import { log, logError, logJson } from './log.ts';
 import type { PgClient } from './db/pg.ts';
+import type { TwilioAuth } from './twilio/client.ts';
 import type { DoctorInputs } from './doctor/checks.ts';
 import type { Rec } from './mirror/types.ts';
 import type { ReplayLedger as ReplayLedgerType } from './migrate/state.ts';
@@ -35,6 +36,7 @@ const lazy = {
   report: () => import('./doctor/report.ts'),
   scan: () => import('./doctor/scan.ts'),
   backfill: () => import('./mirror/backfill.ts'),
+  twilioClient: () => import('./twilio/client.ts'),
   sourceJsonl: () => import('./mirror/source-jsonl.ts'),
   sourcePostgres: () => import('./mirror/source-postgres.ts'),
   rehearse: () => import('./migrate/rehearse.ts'),
@@ -106,6 +108,7 @@ program
       const cfg = (await lazy.config()).loadConfig(opts.config);
       const cs = await acsConnectionString();
       const dbUrl = process.env.DATABASE_URL;
+
 
       let resourceGuid = await acsExpectResource();
       let host = '(unknown)';
@@ -225,16 +228,33 @@ program
 const mirror = program.command('mirror').description('ACS → Postgres. Makes the ACS resource disposable.');
 mirror
   .command('backfill')
-  .description('Walk ACS (or a JSONL extract) and upsert into threadvault_* tables.')
+  .description('Walk ACS or Twilio (or a JSONL extract) and upsert into threadvault_* tables.')
   .option('--from-jsonl <path>', 'read from a JSONL file instead of ACS')
+  .option('--from-twilio', 'read Twilio Conversations instead of ACS (TWILIO_* env)')
   .option('--to-jsonl <path>', 'write to a JSONL file instead of Postgres')
   .option('--reader-acs-id <id>', 'the ACS identity to perform the ACS read as')
   .option('--concurrency <n>', 'threads walked at once (messages stay serial)', '4')
   .option('--commit', 'must be passed to write to Postgres (otherwise dry-run)')
-  .action(async (opts: { fromJsonl?: string; toJsonl?: string; readerAcsId?: string; concurrency?: string; commit?: boolean }) => {
+  .action(async (opts: { fromJsonl?: string; fromTwilio?: boolean; toJsonl?: string; readerAcsId?: string; concurrency?: string; commit?: boolean }) => {
     try {
       const cs = await acsConnectionString();
       const dbUrl = process.env.DATABASE_URL;
+
+      // Twilio needs no resource guard: its credentials name one account and
+      // this only reads. The ACS guard exists because an ACS identity is
+      // scoped to a resource and writing to the wrong one is unrecoverable.
+      let twilio: TwilioAuth | undefined;
+      if (opts.fromTwilio) {
+        const { twilioAuth } = await lazy.config();
+        const { authProblem } = await lazy.twilioClient();
+        const auth = twilioAuth();
+        const problem = authProblem(auth ?? {});
+        if (!auth || problem) {
+          logError(problem ?? 'Twilio credentials are not set');
+          process.exit(2);
+        }
+        twilio = auth;
+      }
 
       let db: PgClient | undefined;
       if (!opts.toJsonl) {
@@ -262,6 +282,7 @@ mirror
         db,
         jsonlPath: opts.toJsonl,
         fromJsonl: opts.fromJsonl,
+        twilio,
         concurrency: Math.max(1, Number(opts.concurrency ?? 4)),
       });
 

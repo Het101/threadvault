@@ -86,7 +86,7 @@ That's it. ACS is now disposable.
 |---|---|---|
 | `probe` | Mints one throwaway identity to discover the resource GUID. Prints host + GUID, never the key. | Not your data. Mints and deletes one throwaway identity\* |
 | `doctor` | Audits ACS + your database for the five failure modes below. | Not your data. Mints and deletes one throwaway identity\* |
-| `mirror backfill` | Copies threads, participants, and messages into Postgres. | Only with `--commit` |
+| `mirror backfill` | Copies threads, participants, and messages into Postgres. Reads ACS, or Twilio Conversations with `--from-twilio`. | Only with `--commit` |
 | `migrate extract` | Exports ACS chat history to a portable JSONL file. | No — read-only |
 | `migrate plan` | Inspects a dump and flags every gap before you replay. | No — read-only |
 | `migrate rehearse` | Writes one synthetic thread, asserts four durability goals, deletes it. | Yes (target resource) |
@@ -182,6 +182,48 @@ Three properties the mirror guarantees, all of them learned the hard way:
 - **`sender_user_id` is your UUID, never an ACS identity.** ACS identities die with the resource. Yours don't.
 - **`sent_at` is the original timestamp.** ACS stamps its own `createdOn` on replay; the true value is preserved separately and always wins.
 - **Re-running is a no-op.** Upserts key on `external_id` / `external_message_id`, and participants without a host mapping get a *derived* stand-in id — so a second pass updates rows instead of duplicating them.
+
+### Mirroring Twilio Conversations
+
+```bash
+export TWILIO_ACCOUNT_SID=AC…
+export TWILIO_API_KEY_SID=SK…          # preferred: revocable on its own
+export TWILIO_API_KEY_SECRET=…
+# or, less good, TWILIO_AUTH_TOKEN=… which is the whole account
+
+threadvault mirror backfill --from-twilio               # dry run
+threadvault mirror backfill --from-twilio --commit
+threadvault mirror backfill --from-twilio --to-jsonl dump.jsonl
+```
+
+The mirror is the part of this tool that was never about Azure. Putting the
+estate somewhere you own, keyed to your own user ids, so the vendor becomes
+disposable — that argument holds for any chat provider. A Twilio walk produces
+the same records an ACS walk produces, so `migrate plan`, `migrate verify` and
+the Postgres schema all work on it unchanged.
+
+Two things are deliberately different, and both are because **Twilio does not
+have the problem this tool was written for**:
+
+- **No resource guard.** A Twilio credential names one account and the walk only
+  reads. `ACS_EXPECT_RESOURCE` exists because an ACS identity is scoped to a
+  resource and writing to the wrong one cannot be undone.
+- **No identity minting.** Twilio takes the author as a plain string when a
+  message is created. ACS does not — you must send as an identity you hold a
+  token for and record the real sender in metadata, which is the root of
+  misattribution, of stale identities, and of most of what `doctor` looks for.
+
+`senderAcsId` in a dump carries the Twilio author, and participants reached over
+SMS or WhatsApp are identified by their binding address. The field names are
+byte-compatible with dumps taken before Twilio was supported, so read that one
+as *the provider's own identifier for the sender*.
+
+> **Read this before you rely on it.** The Twilio reader is covered by tests
+> against a faked HTTP layer — pagination, auth, partial failures — but it has
+> not yet been run against a live Twilio account. Everything ACS-side in this
+> tool has. If you run it against real Twilio data,
+> [tell us what happened](https://github.com/Het101/threadvault/issues); that is
+> the gap between this and the rest of the project.
 
 ## Migrating to a new resource
 
@@ -331,6 +373,9 @@ the safe first thing to run on an extract from someone else's machine.
 | `ACS_CONNECTION_STRING` | — | The resource to read or write. `ACS_NEW_CONNECTION_STRING` and `AZURE_COMMUNICATION_CONNECTION_STRING` are also accepted, in that order of preference. |
 | `ACS_EXPECT_RESOURCE` | — | The resource GUID you intend to write to. Every ACS write refuses without it, probes the target, and refuses again if the GUID differs. Get it from `probe`. |
 | `DATABASE_URL` | — | Standard Postgres URL. `doctor` opens it read-only. |
+| `TWILIO_ACCOUNT_SID` | — | `AC…`. Required for `--from-twilio`. |
+| `TWILIO_API_KEY_SID` / `TWILIO_API_KEY_SECRET` | — | `SK…` and its secret. Preferred over the auth token, because a key can be revoked on its own. |
+| `TWILIO_AUTH_TOKEN` | — | Used only when no API key is set. This is the whole account; prefer a key. |
 | `ACS_RETRY_ATTEMPTS` | `8` | Retries through ACS throttling; `retry-after` is honoured when ACS sends it. Permission and not-found errors fail at once rather than backing off through a schedule that cannot succeed. |
 | `PG_SSL_NO_VERIFY` | `false` | Skips TLS certificate verification for remote Postgres. An escape hatch for a private CA. Leave it off — that connection carries credentials and message bodies. |
 | `PG_HOST_OVERRIDE` | — | `host=address` pairs, comma-separated, for pinned DNS. |
@@ -347,7 +392,19 @@ passwords are stripped from every log line, error message and `--json` payload.
 - `--concurrency <n>` on `migrate extract` and `mirror backfill` — threads walked
   at once, default 4.
 - `--json` on `doctor`, `migrate plan` and `migrate verify` — same data, machine
-  readable, same redaction.
+  readable, same redaction. `doctor --json` carries the remediation too, so a
+  monitor can surface what to do and not only what is wrong.
+- `--no-bodies` on `migrate extract` — writes every thread, participant,
+  identity, timestamp and attribution field and **no message text**. That is
+  everything `plan` and `verify` read, so the analysis runs against a resource
+  whose contents are not allowed to leave it. `migrate apply` refuses such a
+  dump, in the dry run, before `--commit` is reached.
+- `--mint` on `migrate rehearse` — creates the two identities it needs and
+  removes them again. A new ACS resource has none, and ACS creates identities
+  only through its API, so without this a rehearsal on a fresh target meant
+  writing a script first. Identities you pass in are never deleted.
+- `--from-twilio` on `mirror backfill` — read Twilio Conversations instead of
+  ACS.
 
 
 ### Reading your own tables
