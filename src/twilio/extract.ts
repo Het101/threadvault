@@ -107,10 +107,14 @@ export async function* extractTwilio(
         });
       }
     } catch (e) {
-      logError('listConversations failed', {
-        error: e instanceof Error ? e.message : String(e),
-      });
-      return;
+      // Fatal, not empty. See the same guard in mirror/extract.ts: a Twilio
+      // account that refuses the Conversations API answers 401, and swallowing
+      // it reported an empty account with exit 0.
+      throw new Error(
+        'Could not list Twilio conversations: ' +
+          (e instanceof Error ? e.message : String(e)),
+        { cause: e },
+      );
     }
   }
 

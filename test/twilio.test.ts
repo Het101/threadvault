@@ -291,17 +291,34 @@ describe('mirror backfill accepts Twilio as a source', () => {
 });
 
 describe('a walk that goes wrong keeps what it read', () => {
-  it('reports and stops when the conversation list itself fails', async () => {
+  /**
+   * This test used to assert the opposite, and the opposite was a bug.
+   *
+   * Running the walk against a real Twilio trial account, which refuses the
+   * Conversations API with 401, printed "Threads: 0, Participants: 0,
+   * Messages: 0" and exited 0. A revoked key and an account with nothing in it
+   * produced the same answer, and the caller had no way to tell them apart.
+   *
+   * Failing to list anything is not a finding about the estate.
+   */
+  it('fails loudly when the conversation list itself fails', async () => {
+    await expect(
+      walk({
+        auth,
+        session: {
+          conversations: () => failing('401 Unauthorized: not available on a Trial account'),
+          participants: empty,
+          messages: empty,
+        },
+      }),
+    ).rejects.toThrow(/Could not list Twilio conversations.*Trial account/s);
+  });
+
+  it('an account that really is empty is still empty, not an error', async () => {
     const recs = await walk({
       auth,
-      session: {
-        conversations: () => failing('401 Unauthorized'),
-        participants: empty,
-        messages: empty,
-      },
+      session: { conversations: empty, participants: empty, messages: empty },
     });
-    // Nothing yielded, and no throw: the caller gets an empty walk and the
-    // reason is logged. A credential problem must not look like an empty account.
     expect(recs).toEqual([]);
   });
 
