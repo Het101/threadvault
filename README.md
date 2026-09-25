@@ -434,6 +434,7 @@ Issues and pull requests welcome. Please don't include real chat content, connec
 | | |
 |---|---|
 | [Troubleshooting](#troubleshooting) | The things that have actually gone wrong for people |
+| [First real run](https://github.com/Het101/threadvault/blob/main/docs/first-real-run.md) | Pointing it at an actual ACS resource for the first time, one safe stage at a time |
 | [CONTRIBUTING.md](https://github.com/Het101/threadvault/blob/main/CONTRIBUTING.md) | How to build it, the rules a PR is held to, and why each one exists |
 | [SECURITY.md](https://github.com/Het101/threadvault/blob/main/SECURITY.md) | How to report a vulnerability, and the guarantees the code is built to keep |
 | [CHANGELOG.md](https://github.com/Het101/threadvault/blob/main/CHANGELOG.md) | What changed, including the breaking bits |
