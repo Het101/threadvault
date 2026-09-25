@@ -1,6 +1,6 @@
 {
   "name": "threadvault",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Mirror Azure Communication Services chat into Postgres so the ACS resource is disposable.",
   "type": "module",
   "main": "dist/cli.js",
