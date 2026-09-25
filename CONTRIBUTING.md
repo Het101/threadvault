@@ -31,6 +31,7 @@ To *develop* it you want **Node 22.12 or newer**: the test toolchain pulls Vite 
 ```bash
 npm run dev -- doctor --help   # run from source, no build step
 npm test                       # vitest
+npm run test:coverage          # vitest with the coverage floor CI enforces
 npm run lint                   # eslint, type-aware
 npm run lint:fix               # and fix what it can
 npm run typecheck              # tsc --noEmit
@@ -107,6 +108,16 @@ Every non-trivial change needs a test that fails without it. Not a suite — one
 - ACS is mocked with `vi.mock('../src/acs/client.ts', …)`. See `test/scan.test.ts` or `test/verify.test.ts` for the shape.
 - Fixtures are synthetic. `lorem`, `19:t@thread.v2`, `8:acs:<guid>_<guid>`, `u-user`.
 - If your change touches a path that handles message bodies, assert the body does **not** appear in the output. `test/verify.test.ts` has an example.
+
+### Coverage
+
+CI runs the suite with a coverage floor. It is a floor, not a target: the point
+is that coverage cannot quietly fall. Three of the six defects found in the
+September audit were in paths nothing exercised, and the suite was green the
+whole time — `src/cli.ts` was at 0%, and two of those bugs lived in it.
+
+If you add a module, add the test that would fail without it. If you find the
+floor in your way, the answer is a test, not a lower floor.
 
 ## The domain rules
 

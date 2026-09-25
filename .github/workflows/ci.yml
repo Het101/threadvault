@@ -27,7 +27,7 @@ jobs:
       - run: node -v && npm -v
       - run: npm ci
       - run: npm run lint
-      - run: npm test
+      - run: npm run test:coverage
       - run: npm run typecheck
       - run: npm run build
       - run: node dist/cli.js --help
