@@ -10,6 +10,31 @@ changes may land in a minor release; they are always called out below.
 
 ### Added
 
+- **`doctor --baseline <path>`.** Reports what changed since the last run, and
+  exits `1` only on **new** findings.
+
+  Running `doctor` nightly was already possible — `--json`, exit codes, cron.
+  The problem is that it reports the same estate every night. Two findings you
+  have decided to live with arrive again at 3am looking exactly like two that
+  appeared an hour ago, and after a week nobody opens the mail.
+
+  ```
+    since     2026-09-26T04:26:27.106Z
+    drift     1 new, 0 resolved, 1 unchanged
+    + (5) database thread e7914fb9-… has no externalId
+  ```
+
+  A first run writes the baseline and exits `0`: the estate was already like
+  that, and the first scheduled run should not be the loudest one anybody sees.
+  Findings are matched on check, kind and id rather than on the summary, which
+  rewords itself as counts move — comparing on it would report a thread as new
+  the moment its participant count changed. One baseline per resource; pointing
+  it at another resource’s file refuses rather than reporting the whole estate
+  as new.
+
+  No daemon. Cron and CI already schedule things; what was missing was a run
+  worth reading.
+
 - **`TWILIO_BASE_URL`.** Points the Conversations client somewhere other than
   the default host. Twilio runs regional endpoints, so this is not only a test
   seam — but it is also the thing that made the Twilio reader verifiable at
