@@ -6,7 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
-## [Unreleased]
+## [0.10.0] - 2026-09-26
+
+Two features from pointing the tool at things: replaying from a Postgres
+mirror, and making a scheduled `doctor` run worth reading. Every technical 1.0
+item is now done; what remains is [somebody other than the
+author](https://github.com/Het101/threadvault/issues/93).
 
 ### Added
 
@@ -661,6 +666,7 @@ happens when you hold it wrong.
 Initial release: `probe`, `doctor`, `mirror backfill`, `migrate extract`,
 `migrate rehearse`, `migrate apply`.
 
+[0.10.0]: https://github.com/Het101/threadvault/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/Het101/threadvault/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/Het101/threadvault/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/Het101/threadvault/compare/v0.8.0...v0.9.0
