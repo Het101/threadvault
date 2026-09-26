@@ -546,6 +546,13 @@ Test fixtures are synthetic — lorem text, never real names, never clinical con
 
 Issues and pull requests welcome. Please don't include real chat content, connection strings, or resource GUIDs from a live tenant in a bug report — a redacted `doctor --json` is almost always enough.
 
+**The most useful thing you can send is a run.**
+[I ran it — here is what it found](https://github.com/Het101/threadvault/issues/new?template=run_report.yml)
+takes a minute, and a run that found *nothing* counts: it tells me the checks
+work against an estate I have never seen, which is the one thing I cannot test
+for myself. Every defect in this tool so far came from running it against
+something real rather than from a test.
+
 ## Project
 
 | | |
