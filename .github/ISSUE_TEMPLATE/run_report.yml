@@ -1,0 +1,73 @@
+name: I ran it — here is what it found
+description: Report a run against your own resource. A clean result is just as useful as a broken one.
+labels: [run report]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This is the most useful thing anyone can send.** Every defect found in this
+        tool so far came from running it against something real, not from a test.
+
+        A run that found nothing is worth reporting too. It tells me the checks work
+        against an estate I have never seen, which is the one thing I cannot test
+        for myself.
+
+        **Redact freely.** Never paste message content, a connection string, a real
+        resource GUID, or a database URL. `migrate plan` output is counts and is
+        normally safe as-is; `doctor` output contains thread ids, so trim it. A vague
+        report is better than a leaked one, always.
+  - type: dropdown
+    id: what
+    attributes:
+      label: What did you run?
+      multiple: true
+      options:
+        - doctor
+        - migrate extract
+        - migrate plan
+        - migrate rehearse
+        - migrate apply
+        - migrate verify
+        - mirror backfill (ACS)
+        - mirror backfill (Twilio)
+    validations: { required: true }
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: How did it go?
+      options:
+        - It worked and found nothing
+        - It worked and found real problems in my estate
+        - It ran but something in the output confused me
+        - It failed or refused, and I could not tell why
+        - It did something I did not expect
+    validations: { required: true }
+  - type: textarea
+    id: output
+    attributes:
+      label: What did it print?
+      description: Trimmed or redacted is fine. Counts alone are useful.
+      render: text
+  - type: textarea
+    id: surprise
+    attributes:
+      label: What surprised you?
+      description: |
+        The part I most want. A number that looked wrong, a word that was unclear, a
+        refusal you could not act on, a step the docs did not warn you about. Three
+        of the defects found so far were reports that were technically correct and
+        impossible to read — nothing failed, the output just did not mean what it
+        appeared to.
+    validations: { required: true }
+  - type: input
+    id: scale
+    attributes:
+      label: Roughly how big is the estate?
+      description: Threads and messages, order of magnitude. Blank is fine.
+      placeholder: "~400 threads, ~12k messages"
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`npx threadvault --version`"
+      placeholder: "0.10.0"
