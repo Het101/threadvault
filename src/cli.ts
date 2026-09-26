@@ -34,6 +34,7 @@ const lazy = {
   schema: () => import('./db/schema.ts'),
   checks: () => import('./doctor/checks.ts'),
   report: () => import('./doctor/report.ts'),
+  baseline: () => import('./doctor/baseline.ts'),
   scan: () => import('./doctor/scan.ts'),
   backfill: () => import('./mirror/backfill.ts'),
   twilioClient: () => import('./twilio/client.ts'),
@@ -99,8 +100,9 @@ program
   .option('--json', 'print the report as JSON')
   .option('--config <path>', 'path to threadvault.yml')
   .option('--no-acs', 'skip the ACS walk (database checks only)')
+  .option('--baseline <path>', 'compare against the last run and report what changed; exits 1 only on new findings')
   .option('--concurrency <n>', 'ACS listing concurrency', '4')
-  .action(async (opts: { json?: boolean; config?: string; acs?: boolean; concurrency?: string }) => {
+  .action(async (opts: { json?: boolean; config?: string; acs?: boolean; concurrency?: string; baseline?: string }) => {
     const wantJson = !!opts.json;
     const walkAcs = opts.acs !== false;
     const concurrency = Math.max(1, Number(opts.concurrency ?? 4));
@@ -213,11 +215,36 @@ program
         dbThreads: threads.length,
         unreadable,
       });
+      // A scheduled run that reports the same estate every night stops being
+      // read. With a baseline it reports what changed, and exits 1 only when
+      // something is new - so cron is quiet until it should not be.
+      let drift;
+      if (opts.baseline) {
+        const bl = await lazy.baseline();
+        const previous = bl.readBaseline(opts.baseline);
+        const mismatch = bl.baselineMismatch(previous, resourceGuid);
+        if (mismatch) {
+          logError(mismatch);
+          process.exit(2);
+        }
+        drift = bl.diffAgainst(previous, findings);
+        bl.writeBaseline(opts.baseline, resourceGuid, findings);
+      }
+
       if (wantJson) {
-        logJson(report);
+        logJson(drift ? { ...report, drift } : report);
       } else {
         log(formatReport(report));
+        if (drift) {
+          const { driftLines } = await lazy.baseline();
+          log('');
+          log(driftLines(drift).join('\n'));
+        }
       }
+
+      // Without a baseline: 0 clean, 1 findings. With one: 1 means new, because
+      // a finding you already decided to live with is not a reason to wake up.
+      if (drift) process.exit(drift.added.length > 0 ? 1 : 0);
       process.exit(exitCode(report, false));
     } catch (e) {
       logError(e instanceof Error ? e.message : String(e));

@@ -156,7 +156,34 @@ nothing*. Every finding comes with what it means, what to do and how to confirm
 it worked — once per kind of problem, not once per occurrence. `--json` carries
 the same guidance for anything reading it automatically.
 
-Exit codes: **0** clean · **1** findings · **2** could not run. Wire it into CI or a cron alert.
+Exit codes: **0** clean · **1** findings · **2** could not run.
+
+### Running it on a schedule
+
+Cron and CI already schedule things well, so there is no daemon here. What a
+nightly run needs is not to report the same estate every night until nobody
+opens the mail:
+
+```bash
+threadvault doctor --baseline .threadvault/baseline.json
+```
+
+It reports what changed since last time and **exits 1 only on new findings**,
+so the job is quiet until something actually moves:
+
+```console
+  since     2026-09-26T04:26:27.106Z
+  drift     1 new, 0 resolved, 1 unchanged
+  + (5) database thread e7914fb9-… has no externalId
+```
+
+Two findings you have decided to live with stop being an alarm. A new one is
+the only thing that wakes anybody.
+
+A first run writes the baseline and exits **0** — the estate was already like
+that, and the first scheduled run should not be the loudest one you ever see.
+One baseline per resource; pointing it at another resource’s file refuses
+rather than reporting the whole estate as new.
 
 ```bash
 threadvault doctor --json          # pipe to jq, dashboards, alerting

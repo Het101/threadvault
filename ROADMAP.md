@@ -34,8 +34,10 @@ That is the bar; polish is not a substitute for it.
       in full, including what went wrong — done 2026-09-26 against a UAT
       resource: `plan`, `apply --commit`, `verify`. It found that `verify` did
       not work at all
-- [ ] A scheduled or watching mode for `doctor`, so drift is caught as it
-      happens rather than during the next migration
+- [x] A scheduled mode for `doctor` — done 2026-09-26. `--baseline` reports
+      what changed since the last run and exits 1 only on new findings, so a
+      nightly job is quiet until something moves. No daemon: cron and CI
+      already schedule things, and what was missing was a run worth reading
 - [x] Finish the `--from-mirror` identity story — done 2026-09-26. Replaying
       from the mirror works and was run end to end. Participants the host
       never mapped carry a derived id, and `migrate plan` now counts and
