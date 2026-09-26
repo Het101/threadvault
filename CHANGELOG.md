@@ -46,6 +46,27 @@ changes may land in a minor release; they are always called out below.
   read one thread is still tolerated; a failure to read any is not a finding
   about the estate.
 
+## [Unreleased]
+
+### Added
+
+- **`migrate plan` counts participants carrying an id this tool derived**, and
+  says what that costs. `mirror backfill` stands a deterministic id in for
+  anyone the host tables did not map, so re-running stays a no-op. Replaying
+  one mints an identity against that synthetic id: the thread is whole and the
+  messages are attributed, and the person matches no row in your users table
+  and never will.
+
+  Found by replaying from a Postgres mirror for the first time. Plan reported
+  `messages carrying our user id: 5 of 5` — a clean bill — while one of seven
+  participants was unmapped. The metric counts messages; the derived id is on a
+  participant. Detection is exact rather than a guess, because the derived id
+  is a deterministic function of the provider id.
+
+  The note says how to fix it: point `threadvault.yml` at your users table and
+  re-run `mirror backfill`, which repairs rows rather than duplicating them.
+  Mapping is your data, so the tool says how rather than inventing one.
+
 ## [0.9.2] - 2026-09-26
 
 Two defects in the Postgres mirror, found by running `mirror backfill --commit`

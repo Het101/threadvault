@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formatPlan, migratePlan } from '../src/migrate/plan.ts';
+import { shadowUserId } from '../src/mirror/sink-postgres.ts';
 import type { Rec } from '../src/mirror/types.ts';
 
 async function* recs(items: Rec[]): AsyncIterable<Rec> {
@@ -171,5 +172,74 @@ describe('how plan reports attribution', () => {
   it('does not count an ACS identity stuffed into the user id field', async () => {
     const report = await migratePlan(recs([message(1, `8:acs:${guidA}_user`)]));
     expect(formatPlan(report)).toContain('messages carrying our user id:    0 of 1');
+  });
+});
+
+/**
+ * Found by replaying from a Postgres mirror for the first time.
+ *
+ * `mirror backfill` stands a derived id in for any participant the host tables
+ * did not map, so that re-running is a no-op. Replaying that mints an ACS
+ * identity against a synthetic id — the thread is whole, the messages are
+ * attributed, and the person matches no row in the caller's users table.
+ *
+ * plan reported "messages carrying our user id: 5 of 5" and said nothing about
+ * it, because that metric counts messages and the derived id is on a
+ * participant.
+ */
+describe('participants the host never mapped', () => {
+  const GUID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  const acs = (n: string) => `8:acs:${GUID}_${n}`;
+
+  const participant = (n: string, ourUserId: string | null): Rec => ({
+    kind: 'participant',
+    legacyThreadId: '19:t@thread.v2',
+    acsId: acs(n),
+    displayName: null,
+    ourUserId,
+  });
+
+  it('counts a derived id, and does not mistake a real one for it', async () => {
+    const report = await migratePlan(
+      recs([
+        participant('a', shadowUserId(acs('a'))),
+        participant('b', '11111111-1111-4111-8111-111111111111'),
+      ]),
+    );
+    expect(report.participantsWithDerivedId).toBe(1);
+    expect(report.participants).toBe(2);
+  });
+
+  // Detection is exact, not a guess: shadowUserId is deterministic, so a value
+  // either is the derived id for that ACS id or it is not.
+  it('does not flag a UUID that merely looks synthetic', async () => {
+    const report = await migratePlan(
+      recs([participant('a', shadowUserId(acs('somebody-else')))]),
+    );
+    expect(report.participantsWithDerivedId).toBe(0);
+  });
+
+  it('does not flag a participant with no id at all', async () => {
+    const report = await migratePlan(recs([participant('a', null)]));
+    expect(report.participantsWithDerivedId).toBe(0);
+  });
+
+  it('explains what a derived id costs, rather than only counting it', async () => {
+    const out = formatPlan(
+      await migratePlan(recs([participant('a', shadowUserId(acs('a'))), participant('b', 'u')])),
+    );
+    expect(out).toContain('of those, with a derived id:    1');
+    expect(out).toMatch(/1 of 2 participant\(s\) carry an id this tool/);
+    expect(out).toContain('matches no row in your users table');
+    // And says how to fix it, not just that it is wrong.
+    expect(out).toContain('point threadvault.yml');
+  });
+
+  it('says nothing when every participant was mapped', async () => {
+    const out = formatPlan(
+      await migratePlan(recs([participant('b', '11111111-1111-4111-8111-111111111111')])),
+    );
+    expect(out).toContain('of those, with a derived id:    0');
+    expect(out).not.toContain('carry an id this tool');
   });
 });

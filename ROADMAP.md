@@ -36,8 +36,12 @@ That is the bar; polish is not a substitute for it.
       not work at all
 - [ ] A scheduled or watching mode for `doctor`, so drift is caught as it
       happens rather than during the next migration
-- [ ] Finish the `--from-mirror` identity story: replaying from the Postgres
-      mirror still needs host user IDs mapped back onto new identities
+- [x] Finish the `--from-mirror` identity story — done 2026-09-26. Replaying
+      from the mirror works and was run end to end. Participants the host
+      never mapped carry a derived id, and `migrate plan` now counts and
+      explains them instead of reporting perfect attribution; mapping them is
+      the caller’s data, not something this tool can invent, so it says how
+      rather than guessing
 - [ ] Stable flags. After 1.0 they follow semver
 
 ## What is verified
@@ -55,6 +59,7 @@ is worth being specific about, because "verified" is easy to say.
 | `migrate apply --commit` | UAT ACS | — |
 | `migrate verify` | UAT ACS, same replay | that it reported `verified clean 0` against a correct replay |
 | `mirror backfill` → Twilio | a live Twilio account | that a 401 was reported as an empty estate, exit 0 — in the ACS walk too, since the beginning |
+| `migrate apply --from-mirror` | Postgres 17 → UAT ACS | that `plan` reported perfect attribution while a participant carried an id the tool had invented |
 | `mirror backfill` → Postgres | Postgres 17 | that a non-UUID user id died with a raw driver error mid-write, and that the identity count counted upserts |
 
 Nine defects. None was caught by the test suite, because in every case the code
