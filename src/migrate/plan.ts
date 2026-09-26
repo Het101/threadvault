@@ -1,6 +1,7 @@
 import { belongsToResource, parseAcsId } from '../acs/identity.ts';
 import { log } from '../log.ts';
 import { isReplayable, type Rec } from '../mirror/types.ts';
+import { shadowUserId } from '../mirror/sink-postgres.ts';
 
 export type PlanReport = {
   threads: number;
@@ -9,6 +10,15 @@ export type PlanReport = {
   /** ACS control messages. `apply` skips these, so plan must not imply it won't. */
   controlMessages: number;
   uniqueAcsIds: number;
+  /**
+   * Participants whose `ourUserId` the mirror derived rather than received.
+   *
+   * `mirror backfill` stands in a deterministic id for anyone the host never
+   * mapped, so re-running is a no-op. Replaying that mints an identity keyed
+   * to a synthetic id: attribution holds inside the estate, but the person it
+   * names matches no row in the caller’s users table.
+   */
+  participantsWithDerivedId: number;
   messagesMissingOriginalSender: number;
   messagesMissingOriginalCreatedOn: number;
   staleAcsIds: number;
@@ -32,6 +42,7 @@ export async function migratePlan(
     messages: 0,
     controlMessages: 0,
     uniqueAcsIds: 0,
+    participantsWithDerivedId: 0,
     messagesMissingOriginalSender: 0,
     messagesMissingOriginalCreatedOn: 0,
     staleAcsIds: 0,
@@ -58,6 +69,10 @@ export async function migratePlan(
       noteAcsId(rec.createdByAcsId);
     } else if (rec.kind === 'participant') {
       report.participants++;
+      // shadowUserId is deterministic, so this is exact rather than a guess.
+      if (rec.ourUserId && rec.acsId && rec.ourUserId === shadowUserId(rec.acsId)) {
+        report.participantsWithDerivedId++;
+      }
       noteAcsId(rec.acsId);
     } else if (rec.kind === 'message') {
       report.messages++;
@@ -81,12 +96,35 @@ function attributionRow(report: PlanReport): string {
 }
 
 /**
+ * A participant with a derived id is a different problem from a message with no
+ * sender, and the message metric hides it entirely: every message can carry our
+ * user id while a participant carries one this tool invented.
+ */
+function derivedIdNote(report: PlanReport): string | null {
+  const n = report.participantsWithDerivedId;
+  if (n === 0) return null;
+  return [
+    `note: ${n} of ${report.participants} participant(s) carry an id this tool`,
+    '      derived, not one your application gave it. `mirror backfill` stands',
+    "      one in for anyone the host tables did not map, so that re-running is a",
+    '      no-op. Replaying them mints an identity against that synthetic id: the',
+    '      thread is whole and the messages are attributed, but that person',
+    '      matches no row in your users table and never will.',
+    '',
+    '      Map them before replaying if you want that link: point threadvault.yml',
+    '      at your users table and re-run `mirror backfill`, which repairs rows',
+    '      rather than duplicating them.',
+  ].join('\n');
+}
+
+/**
  * The count alone is unreadable, and read wrongly it is alarming.
  *
  * `originalSenderUserId` is metadata that `migrate apply` writes during a
- * replay. ACS does not store our user ids, so a first extract from a resource
- * that has never been replayed carries none at all - every message "missing"
- * it, which looks like total attribution loss and is simply how ACS works.
+ * replay. No chat provider stores our user ids, so a first extract from an
+ * estate that has never been replayed carries none at all - every message
+ * "missing" it, which looks like total attribution loss and is simply how the
+ * providers work.
  *
  * A partial count is the real signal: it means some messages have the id and
  * others lost it, which is the defect this tool was written for.
@@ -121,6 +159,7 @@ export function formatPlan(report: PlanReport, targetResourceGuid?: string): str
   const lines = [
     row('threads', report.threads),
     row('participants', report.participants),
+    row('  of those, with a derived id', report.participantsWithDerivedId),
     row('messages', report.messages),
     row('  of those, ACS control messages', report.controlMessages),
     row('  replayable by apply', report.messages - report.controlMessages),
@@ -134,6 +173,8 @@ export function formatPlan(report: PlanReport, targetResourceGuid?: string): str
   }
   const note = attributionNote(report);
   if (note) lines.push('', note);
+  const derived = derivedIdNote(report);
+  if (derived) lines.push('', derived);
   return lines.join('\n');
 }
 
