@@ -69,6 +69,20 @@ a test was found asserting something the real system cannot do.
 What this does **not** yet include is anyone other than the author. That is the
 1.0 bar above, and it is deliberately not something the author can tick.
 
+## Waiting on something we do not have
+
+Work that is understood and not blocked on effort. Recorded here so it is not
+mistaken for work nobody thought of.
+
+| | Waiting on | Tracked |
+|---|---|---|
+| **1.0** | Someone other than the author migrating a real estate | [#93](https://github.com/Het101/threadvault/issues/93) |
+| An orphaned chat thread in a UAT resource | Nothing. It cannot be removed: ACS accepts `deleteChatThread` only from a participant, there is no admin delete, and the access key does not grant one. Left by deleting the minted identities before the thread during a test run. Empty and unreachable | — |
+
+The ordering trap that caused the orphan is written up in the
+[runbook](docs/first-real-run.md#cleaning-up-a-test-replay), because it is
+irreversible and not obvious.
+
 ## Later
 
 - **A second vendor adapter.** Twilio Conversations is the likely first. Around
