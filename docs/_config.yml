@@ -1,0 +1,33 @@
+# GitHub Pages for the docs folder.
+#
+# The pages here were markdown files in a repository, which render fine on
+# github.com and rank like source code. The audience for them finds things by
+# searching — "ACS chat retirement", "export Azure Communication Services chat
+# history" — so they need real titles, descriptions, canonical URLs and a
+# sitemap rather than a <pre> block on a code host.
+
+title: Threadvault
+description: >-
+  Get your Azure Communication Services or Twilio Conversations chat history
+  into a database you own, keyed to your own user IDs, before the vendor
+  decides otherwise.
+url: https://het101.github.io
+baseurl: /threadvault
+
+theme: jekyll-theme-primer
+
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
+
+# Nothing in this folder is a blog, so no post processing and no feed.
+exclude:
+  - assets/banners-a.png
+  - assets/banners-b.png
+  - assets/brand-sheet.png
+
+defaults:
+  - scope:
+      path: ''
+    values:
+      layout: default

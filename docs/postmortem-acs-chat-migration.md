@@ -1,3 +1,7 @@
+---
+title: "Post-mortem: 7,022 chat messages with the wrong author after an ACS resource move"
+description: "Moving an Azure Communication Services resource left 7,022 messages attributed to the wrong person and 649 stored identities unusable. Root cause, recovery, and the five things worth checking on your own estate."
+---
 # Post-mortem: 7,022 chat messages with the wrong author after an Azure Communication Services resource move
 
 *If you are in the middle of this right now, skip to [If this is happening to you](#if-this-is-happening-to-you).*
