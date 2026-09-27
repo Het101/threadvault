@@ -20,6 +20,31 @@ than an incident.
       [what is verified](#what-is-verified) below for which command against
       what, and what each run turned up
 
+## The 2028 deadline changes the shape of this
+
+Microsoft announced in September 2026 that **ACS Chat retires on 30 September
+2028**, and that after that date the supporting data is decommissioned. The
+official replacement is the Microsoft Graph Chat APIs, which need a Teams
+licence and an identity for every user — and the retirement guide says plainly
+that workloads using application-defined identities, a white-label client, or
+consumer-scale chat *"should evaluate other communication providers or redesign
+the experience"*.
+
+That is this project’s audience, on a deadline, told to go elsewhere. It moves
+the centre of gravity:
+
+- **The mirror is the part with a future.** Messages in a database you own,
+  under your own ids, outlive the vendor. That was always the pitch; now it has
+  a date attached.
+- **`migrate apply` targets another ACS resource**, which is useful for a
+  resource move today and stops being a destination in 2028. It is not
+  deprecated and it is not the future.
+- **A destination other than ACS** — replaying a mirrored estate somewhere that
+  is not being retired — is the obvious next question. Not started, and not
+  something to start before somebody has actually used the mirror.
+
+See [the retirement write-up](docs/acs-chat-retirement.md).
+
 ## Now
 
 - [ ] A recorded walkthrough of the full pipeline against a real resource
