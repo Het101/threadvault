@@ -11,6 +11,18 @@
   <a href="https://github.com/Het101/threadvault/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/npm/l/threadvault?style=flat-square&labelColor=161B22&color=6D3BEB"></a>
 </p>
 
+> **Azure Communication Services Chat retires on 30 September 2028.** Microsoft
+> announced it in September 2026, and states that after the retirement date
+> *"the supporting data and telemetry for retired and standalone services will
+> be decommissioned"*. Your chat history goes with the service.
+>
+> If your workload uses **application-defined identities** — patients,
+> customers, anyone who is not in your directory — Microsoft’s own guidance
+> says those workloads *"should evaluate other communication providers or
+> redesign the experience"*.
+>
+> **[What this means, and how to get your history out →](docs/acs-chat-retirement.md)**
+
 **Your Azure Communication Services chat resource should be disposable. Right now it isn't.**
 
 
@@ -558,6 +570,7 @@ something real rather than from a test.
 | | |
 |---|---|
 | [Troubleshooting](#troubleshooting) | The things that have actually gone wrong for people |
+| [ACS Chat retirement](https://github.com/Het101/threadvault/blob/main/docs/acs-chat-retirement.md) | What the 2028 retirement means for your message history, and what to do before the date |
 | [First real run](https://github.com/Het101/threadvault/blob/main/docs/first-real-run.md) | Pointing it at an actual ACS resource for the first time, one safe stage at a time |
 | [CONTRIBUTING.md](https://github.com/Het101/threadvault/blob/main/CONTRIBUTING.md) | How to build it, the rules a PR is held to, and why each one exists |
 | [SECURITY.md](https://github.com/Het101/threadvault/blob/main/SECURITY.md) | How to report a vulnerability, and the guarantees the code is built to keep |
