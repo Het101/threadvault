@@ -1,5 +1,5 @@
 ---
-title: "Threadvault — get your chat history out before the vendor retires it"
+title: "Get your chat history out before the vendor retires it"
 description: "Azure Communication Services Chat retires 30 September 2028 and the data is decommissioned with it. What that means for your message history, and how to get it into a database you own."
 ---
 
