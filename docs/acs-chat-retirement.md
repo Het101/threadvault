@@ -1,3 +1,7 @@
+---
+title: "Azure Communication Services Chat is retiring. Get your history out."
+description: "ACS Chat retires 30 September 2028 and the supporting data is decommissioned with it. What that means for your message history, who the Microsoft Graph path suits, who it does not, and a plan that works backwards from the date."
+---
 # Azure Communication Services Chat is retiring. Get your history out.
 
 Microsoft announced in September 2026 that **ACS Chat retires on 30 September 2028**, and that after that date the data goes with it.
@@ -17,12 +21,17 @@ clearly this project's opinion and not Microsoft's.
 | | |
 |---|---|
 | Announced | September 2026 |
+| New sign-ups close | **23 October 2026** — new customers can no longer sign up for the retiring services |
 | Chat continues to work | until 30 September 2028 |
 | Chat history retained | *"according to your storage policies until the retirement date"* |
 | After the retirement date | *"the supporting data and telemetry for retired and standalone services will be decommissioned"* |
 
 Two years is less than it sounds for a data migration that needs identity
 decisions, legal sign-off, and a cutover.
+
+Existing resources created before 23 October 2026 keep working through the
+transition period. If you are already on ACS Chat, that date does not lock you
+out of your own estate — it closes the door behind you.
 
 ## What this means for your messages
 
@@ -143,7 +152,7 @@ the mirror — your messages in your database, under your ids, where the next
 decision is yours rather than a vendor's.
 
 Every command has been run against real infrastructure rather than test doubles;
-[what is verified](../ROADMAP.md#what-is-verified) lists which command against
+[what is verified](https://github.com/Het101/threadvault/blob/main/ROADMAP.md#what-is-verified) lists which command against
 what, and what each run found.
 
 ## Start with the number

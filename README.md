@@ -21,6 +21,9 @@
 > says those workloads *"should evaluate other communication providers or
 > redesign the experience"*.
 >
+> From **23 October 2026**, new customers can no longer sign up for the
+> retiring services.
+>
 > **[What this means, and how to get your history out →](docs/acs-chat-retirement.md)**
 
 **Your Azure Communication Services chat resource should be disposable. Right now it isn't.**

@@ -1,3 +1,7 @@
+---
+title: "Your first run against a real ACS resource"
+description: "A staged runbook for pointing Threadvault at a resource you care about. Stages 1 to 5 cannot write to ACS at all, and the first thing that writes needs a resource you are willing to delete."
+---
 # Your first run against a real ACS resource
 
 Everything up to stage 5 is **read-only**. Nothing in this document writes to
@@ -7,7 +11,7 @@ Use a dev or test resource if you have one. If the only resource you have is
 production, stages 1-5 are still open to you: use `--no-bodies` at
 [stage 4](#4-extract) and no message text is read at all. Stage 6 needs a
 separate, empty resource either way. Read
-[SECURITY.md](../SECURITY.md#running-it-safely) first.
+[SECURITY.md](https://github.com/Het101/threadvault/blob/main/SECURITY.md#running-it-safely) first.
 
 ## What you need
 
