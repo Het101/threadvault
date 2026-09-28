@@ -6,6 +6,87 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
+## [0.11.0] - 2026-09-28
+
+Minor: one feature, five fixes. The feature exists because a real migration
+asked for it, and the worst of the fixes was found by validating that feature
+against a real Postgres rather than trusting its unit tests.
+
+**If you have already run `mirror backfill` against a real estate, read the
+first fix below.** It changes rows.
+
+### Added
+
+- **`mirror backfill --map-from-db`** fills `ourUserId` from the users table
+  described in `threadvault.yml`, and refuses rather than degrading.
+
+  Nothing in this tool ever filled that field. `migrate extract` walks ACS,
+  which knows nothing about your users, so it writes `null`, and the Postgres
+  sink stood in a derived id for every null. `loadHostUsers`, which reads your
+  users table, was called from exactly one place: `doctor`. The host mapping
+  was audit-only and never consulted during a backfill.
+
+  So an estate mirrored from an ACS walk was written entirely under derived
+  stand-ins. Threads whole, messages ordered, timestamps right, and attributed
+  to nobody: every person matching no row in your users table and never will,
+  because the ACS ids that could have identified them die with the resource.
+
+  Coverage is measured over the whole source **before anything is written**,
+  because a partly mapped write is not something you can re-run your way out
+  of. Any ACS id with no row stops the run, names up to ten, and exits `2`.
+  `--allow-unmapped` accepts stand-ins for exactly those. An ACS id on two
+  users is reported rather than resolved, since picking a winner attributes one
+  person's messages to another. An id already on a record is never overwritten.
+
+  Requires `--from-jsonl`: the check reads the source twice, and a live walk
+  cannot be replayed cheaply. If your ACS id lives somewhere other than a
+  column on `users`, point `usersTable` at a view.
+
+### Fixed
+
+- **A derived stand-in is no longer permanent.** `sinkPostgres` reads
+  `threadvault_identities` into a cache at the start of every run, and the
+  cache won over the id on the record. Once an ACS id had been written under a
+  stand-in it stayed that way: correcting your users table and re-running
+  changed nothing.
+
+  Worse than doing nothing, because the message upsert *does* take the new
+  sender. A corrected re-run left the message attributed to the real person
+  while the identity and participant rows still held the stand-in, so the
+  sender of a message was in no thread and had no identity row. That is the
+  split-brain condition `doctor` check 5 exists to find, made by this tool.
+
+  An id on the record now wins, and rows already written under the previous
+  owner are moved rather than orphaned. **Re-running a backfill after this
+  upgrade will repoint any stand-in your users table can now account for, and
+  says so per identity.** That is the intended repair; it is the first run that
+  can perform it.
+
+- **`migrate plan` counted messages it knew `apply` would drop as replayable.**
+  `apply` buffers a message against the thread a `thread` record opened, and
+  discards the buffer when there is none, silently. A message whose thread
+  record is absent was therefore counted under "replayable by apply". It is now
+  its own row and its own warning. Reachable from a truncated extract, and from
+  a mirror whose messages outlived their thread row.
+
+- **A source that read nothing is no longer called clean.** `migrate plan` on
+  an empty dump printed a row of zeros and exited `0`; `mirror backfill
+  --from-jsonl` on an empty file printed three zeros and, with `--commit`,
+  `Backfill complete.` Both now exit `2` and name the path. Scoped to file
+  sources: an ACS or Twilio walk finding a genuinely empty estate is an answer.
+
+- **A usage error exits `2`, not `1`.** Commander exits `1` for its own usage
+  errors, so `migrate verify` without `--state` returned the code this tool
+  documents as "a mismatch", and a cutover gated on it read a forgotten flag as
+  a failed verification of real data.
+
+### Changed
+
+- **The release workflow blocks egress** instead of auditing it, with the
+  allowlist the audit produced: `github.com`, `api.github.com`,
+  `registry.npmjs.org`, and both sigstore endpoints used for provenance. It is
+  the only job holding `id-token: write`. CI and CodeQL stay on audit.
+
 ## [0.10.1] - 2026-09-28
 
 Patch, from running the published package the way somebody arriving from the
@@ -689,6 +770,7 @@ happens when you hold it wrong.
 Initial release: `probe`, `doctor`, `mirror backfill`, `migrate extract`,
 `migrate rehearse`, `migrate apply`.
 
+[0.11.0]: https://github.com/Het101/threadvault/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/Het101/threadvault/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/Het101/threadvault/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/Het101/threadvault/compare/v0.9.1...v0.9.2
