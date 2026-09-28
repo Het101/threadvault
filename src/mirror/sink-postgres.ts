@@ -2,6 +2,7 @@ import type { PgClient } from '../db/pg.ts';
 import type { Rec } from './types.ts';
 import { parseAcsId, resolveSentAt, resolveOriginalSenderUserId } from '../acs/identity.ts';
 import { createHash } from 'node:crypto';
+import { log } from '../log.ts';
 
 /**
  * A stable stand-in `our_user_id` for a participant the host has not mapped yet.
@@ -31,6 +32,37 @@ function requireUuid(value: string, field: string, legacyThreadId: string): stri
       `stand-in derived. Re-running after fixing it updates rows rather than ` +
       `duplicating them, so a partial run is safe to repeat.`,
   );
+}
+
+/**
+ * Moves every row written under one user id onto another.
+ *
+ * Used when the mirror already holds an owner for an ACS id and the source now
+ * supplies a different one, which in practice means a derived stand-in is being
+ * replaced by the real person. Without it the identity and participant rows
+ * keep the old id while messages take the new one, leaving a message whose
+ * sender is in no thread and has no identity.
+ *
+ * Participants are keyed (thread_id, our_user_id), so a row is only moved where
+ * the destination is free; anything that would collide is dropped, because the
+ * surviving row already says what the moved one would have.
+ */
+async function repointIdentity(db: PgClient, from: string, to: string): Promise<void> {
+  await db.query(`UPDATE threadvault_messages SET sender_user_id = $2 WHERE sender_user_id = $1`, [
+    from,
+    to,
+  ]);
+  await db.query(
+    `UPDATE threadvault_participants p SET our_user_id = $2
+      WHERE p.our_user_id = $1
+        AND NOT EXISTS (
+          SELECT 1 FROM threadvault_participants q
+           WHERE q.thread_id = p.thread_id AND q.our_user_id = $2
+        )`,
+    [from, to],
+  );
+  await db.query(`DELETE FROM threadvault_participants WHERE our_user_id = $1`, [from]);
+  await db.query(`DELETE FROM threadvault_identities WHERE our_user_id = $1`, [from]);
 }
 
 export function shadowUserId(acsId: string): string {
@@ -105,14 +137,37 @@ export async function sinkPostgres(
         threadIdCache.set(rec.legacyThreadId, threadUuid);
       }
 
-      let ourUserUuid = userAcsCache.get(rec.acsId);
-      if (!ourUserUuid && rec.ourUserId) {
-        ourUserUuid = requireUuid(rec.ourUserId, 'ourUserId', rec.legacyThreadId);
-      }
+      // An id on the record wins over what the mirror already believes.
+      //
+      // The cache used to win, which made a stand-in permanent: once an ACS id
+      // had been written under a derived id, every later run read it back from
+      // threadvault_identities and ignored the real id the source now carried.
+      // Fixing your users table and re-running did nothing, and because the
+      // message upsert DOES take the new sender, a re-run left messages
+      // attributed to a person with no identity row and no participant row.
+      // That is the split-brain condition doctor check 5 looks for, made by
+      // this tool.
+      let ourUserUuid = rec.ourUserId
+        ? requireUuid(rec.ourUserId, 'ourUserId', rec.legacyThreadId)
+        : userAcsCache.get(rec.acsId);
 
       // No host mapping for this ACS id yet. Stand in with a derived id so the
       // row is still there to be re-pointed later, and so re-running is a no-op.
       if (!ourUserUuid) ourUserUuid = shadowUserId(rec.acsId);
+
+      // The mirror held a different owner for this ACS id. Rows already written
+      // under the old one have to move, or they are orphaned: the identity row
+      // and the participant rows keep the old id while the messages take the
+      // new one. An ACS id belongs to one person, so this repoints rather than
+      // keeping both.
+      const previous = userAcsCache.get(rec.acsId);
+      if (previous && previous !== ourUserUuid) {
+        await repointIdentity(db, previous, ourUserUuid);
+        log(
+          `Repointed ${rec.acsId} from ${previous} to ${ourUserUuid}` +
+            (previous === shadowUserId(rec.acsId) ? ' (was a derived stand-in)' : ''),
+        );
+      }
 
       const sql = `
         INSERT INTO threadvault_participants (thread_id, our_user_id, acs_id, display_name)
