@@ -10,6 +10,22 @@ async function* recs(items: Rec[]): AsyncIterable<Rec> {
 const guidA = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const guidB = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
+/**
+ * A real extract writes the thread record before the messages that name it.
+ * Fixtures that omit it describe a dump `apply` would silently drop, which is
+ * now its own finding, so the ones testing something else include it.
+ */
+const THREAD: Rec = {
+  kind: 'thread',
+  ourThreadId: null,
+  legacyThreadId: '19:t@thread.v2',
+  topic: 'lorem',
+  createdOn: '2022-01-01T12:00:00.000Z',
+  createdByAcsId: null,
+  deletedOn: null,
+  readerAcsId: `8:acs:${guidA}_user`,
+};
+
 describe('migratePlan', () => {
   it('counts threads, participants, messages and flags missing original sender', async () => {
     const report = await migratePlan(
@@ -106,7 +122,7 @@ describe('migratePlan control messages', () => {
       metadata: null,
     });
     const report = await migratePlan(
-      recs([msg('text', 'm1'), msg('participantAdded', 'm2'), msg('topicUpdated', 'm3')]),
+      recs([THREAD, msg('text', 'm1'), msg('participantAdded', 'm2'), msg('topicUpdated', 'm3')]),
     );
     expect(report.messages).toBe(3);
     expect(report.controlMessages).toBe(2);
@@ -137,7 +153,7 @@ describe('how plan reports attribution', () => {
   });
 
   it('explains a dump with no our-user-ids instead of just counting them', async () => {
-    const report = await migratePlan(recs([message(1, null), message(2, null)]));
+    const report = await migratePlan(recs([THREAD, message(1, null), message(2, null)]));
     const out = formatPlan(report);
 
     expect(out).toContain('messages carrying our user id:    0 of 2');
@@ -148,7 +164,7 @@ describe('how plan reports attribution', () => {
   });
 
   it('warns loudly when only some messages lost it, which is the real defect', async () => {
-    const report = await migratePlan(recs([message(1, 'u-1'), message(2, null), message(3, null)]));
+    const report = await migratePlan(recs([THREAD, message(1, 'u-1'), message(2, null), message(3, null)]));
     const out = formatPlan(report);
 
     expect(out).toContain('messages carrying our user id:    1 of 3');
@@ -159,7 +175,7 @@ describe('how plan reports attribution', () => {
   });
 
   it('says nothing extra when every message carries one', async () => {
-    const report = await migratePlan(recs([message(1, 'u-1'), message(2, 'u-2')]));
+    const report = await migratePlan(recs([THREAD, message(1, 'u-1'), message(2, 'u-2')]));
     const out = formatPlan(report);
 
     expect(out).toContain('messages carrying our user id:    2 of 2');
@@ -170,7 +186,7 @@ describe('how plan reports attribution', () => {
   // An ACS identity in the UUID field is not attribution, it is the bug that
   // caused the incident. It must not be counted as present.
   it('does not count an ACS identity stuffed into the user id field', async () => {
-    const report = await migratePlan(recs([message(1, `8:acs:${guidA}_user`)]));
+    const report = await migratePlan(recs([THREAD, message(1, `8:acs:${guidA}_user`)]));
     expect(formatPlan(report)).toContain('messages carrying our user id:    0 of 1');
   });
 });
@@ -241,5 +257,66 @@ describe('participants the host never mapped', () => {
     );
     expect(out).toContain('of those, with a derived id:    0');
     expect(out).not.toContain('carry an id this tool');
+  });
+});
+
+/**
+ * Found by running `migrate plan` against a dump whose messages name a thread
+ * no thread record opens. `apply` is a streaming state machine: it buffers a
+ * message against the thread a `thread` record opened, and `flushThread`
+ * discards the buffer when there is none. The message is dropped with no
+ * warning and no count, while plan reported it as replayable.
+ *
+ * Reachable from a truncated extract, or from a mirror whose messages outlived
+ * their thread row, which is the split-brain condition doctor check 5 exists
+ * to find.
+ */
+describe('messages whose thread is not in the dump', () => {
+  // Narrowed to the message member, so spreading one below stays a message
+  // rather than widening back to the whole Rec union.
+  const orphan = (n: number): Extract<Rec, { kind: 'message' }> => ({
+    kind: 'message',
+    legacyThreadId: '19:gone@thread.v2',
+    messageId: `m-${n}`,
+    type: 'text',
+    sequenceId: String(n),
+    content: 'lorem',
+    senderAcsId: `8:acs:${guidA}_user`,
+    senderDisplayName: null,
+    ourSenderUserId: '11111111-1111-4111-8111-111111111111',
+    createdOn: '2022-01-01T12:00:00.000Z',
+    editedOn: null,
+    deletedOn: null,
+    metadata: null,
+  });
+
+  it('are not counted as replayable, and are named', async () => {
+    const report = await migratePlan(recs([orphan(1), orphan(2)]));
+
+    expect(report.messages).toBe(2);
+    expect(report.orphanMessages).toBe(2);
+
+    const out = formatPlan(report);
+    expect(out).toContain('replayable by apply:            0');
+    expect(out).toContain('of those, thread not in dump:   2');
+    expect(out).toMatch(/WARNING: 2 message\(s\) name a thread with no thread record/);
+  });
+
+  it('does not count a message whose thread is in the dump', async () => {
+    const report = await migratePlan(recs([THREAD, orphan(1)]));
+    // Same message, different legacyThreadId to THREAD, so still an orphan.
+    expect(report.orphanMessages).toBe(1);
+  });
+
+  // A control message is skipped by apply whether or not its thread is there,
+  // so counting it as an orphan would subtract it twice and could report a
+  // negative replayable count. It did, before this was fixed.
+  it('never reports a negative replayable count', async () => {
+    const control: Rec = { ...orphan(3), type: 'participantAdded', content: null };
+    const report = await migratePlan(recs([control, control, orphan(4)]));
+
+    expect(report.controlMessages).toBe(2);
+    expect(report.orphanMessages).toBe(1);
+    expect(formatPlan(report)).toContain('replayable by apply:            0');
   });
 });

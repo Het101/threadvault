@@ -577,6 +577,17 @@ migrate
       } else {
         logPlan(report, targetResourceGuid);
       }
+      // A dump with nothing in it printed a row of zeros and exited 0, which
+      // this tool's exit codes define as clean. plan is step 1 before apply, so
+      // a mistyped path or an extract that never finished writing read as a
+      // successful plan of an estate with nothing wrong with it.
+      if (report.threads === 0 && report.participants === 0 && report.messages === 0) {
+        logError(
+          `No records read from ${opts.fromJsonl ?? 'the mirror'}. Nothing to plan, so this ` +
+            'is not a clean estate. Check the path, and that the extract finished writing.',
+        );
+        process.exit(2);
+      }
     } catch (e) {
       logError(e instanceof Error ? e.message : String(e));
       process.exit(2);
