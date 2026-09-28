@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { sinkPostgres } from '../src/mirror/sink-postgres.ts';
+import { sinkPostgres, shadowUserId } from '../src/mirror/sink-postgres.ts';
 import type { Rec } from '../src/mirror/types.ts';
 import type { PgClient } from '../src/db/pg.ts';
 
@@ -291,5 +291,98 @@ describe('sinkPostgres and our user ids', () => {
       db,
     );
     expect(stats.identities).toBe(2);
+  });
+});
+
+/**
+ * Found by running a backfill twice against a real Postgres.
+ *
+ * threadvault_identities is read into a cache at the start of every run, and
+ * that cache used to win over the id on the record. So once an ACS id had been
+ * written under a derived stand-in, it was permanent: correcting your users
+ * table and re-running changed nothing, which made --allow-unmapped a one-way
+ * door rather than an escape hatch.
+ *
+ * Worse than doing nothing, because the message upsert DOES take the new
+ * sender. A re-run left the message pointing at the real person while the
+ * identity and participant rows still held the stand-in, so the sender of a
+ * message was in no thread and had no identity. That is the split-brain
+ * condition doctor check 5 exists to find, manufactured by the tool itself.
+ */
+describe('an id on the record beats what the mirror already believes', () => {
+  const ACS = '8:acs:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa_ghost';
+  const REAL = '44444444-4444-4444-8444-444444444444';
+
+  function dbSeededWith(cachedUserId: string) {
+    const queries: Array<{ sql: string; values: unknown[] }> = [];
+    const db = {
+      query: vi.fn().mockImplementation((sql: string, values?: unknown[]) => {
+        queries.push({ sql, values: values ?? [] });
+        if (sql.includes('SELECT our_user_id, acs_id')) {
+          return Promise.resolve({ rows: [{ our_user_id: cachedUserId, acs_id: ACS }] });
+        }
+        if (sql.includes('INSERT INTO threadvault_threads')) {
+          return Promise.resolve({ rows: [{ id: 'th-1' }] });
+        }
+        return Promise.resolve({ rows: [], rowCount: 1 });
+      }),
+    } as unknown as PgClient;
+    return { db, queries };
+  }
+
+  const stream = () =>
+    asyncGeneratorFromArray<Rec>([
+      {
+        kind: 'thread',
+        legacyThreadId: '19:t@thread.v2',
+        topic: 'lorem',
+        createdOn: null,
+        createdByAcsId: ACS,
+        ourThreadId: null,
+        deletedOn: null,
+        readerAcsId: ACS,
+      },
+      {
+        kind: 'participant',
+        legacyThreadId: '19:t@thread.v2',
+        acsId: ACS,
+        displayName: 'lorem',
+        ourUserId: REAL,
+      },
+    ]);
+
+  it('writes the participant under the real id, not the cached stand-in', async () => {
+    const shadow = shadowUserId(ACS);
+    const { db, queries } = dbSeededWith(shadow);
+
+    await sinkPostgres(stream(), db);
+
+    const insert = queries.find((q) => q.sql.includes('INSERT INTO threadvault_participants'));
+    expect(insert?.values).toContain(REAL);
+    expect(insert?.values).not.toContain(shadow);
+  });
+
+  it('moves the rows already written under the stand-in', async () => {
+    const shadow = shadowUserId(ACS);
+    const { db, queries } = dbSeededWith(shadow);
+
+    await sinkPostgres(stream(), db);
+
+    // Messages must follow, or their sender has no identity and no thread.
+    const msgs = queries.find((q) => q.sql.includes('UPDATE threadvault_messages'));
+    expect(msgs?.values).toEqual([shadow, REAL]);
+
+    // The stale identity row must go, or the ACS id maps to two people.
+    const dropped = queries.find((q) => q.sql.includes('DELETE FROM threadvault_identities'));
+    expect(dropped?.values).toEqual([shadow]);
+  });
+
+  it('does not repoint when the mirror already agrees', async () => {
+    const { db, queries } = dbSeededWith(REAL);
+
+    await sinkPostgres(stream(), db);
+
+    expect(queries.find((q) => q.sql.includes('UPDATE threadvault_messages'))).toBeUndefined();
+    expect(queries.find((q) => q.sql.includes('DELETE FROM threadvault_identities'))).toBeUndefined();
   });
 });
