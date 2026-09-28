@@ -5,6 +5,15 @@ import { shadowUserId } from '../mirror/sink-postgres.ts';
 
 export type PlanReport = {
   threads: number;
+  /**
+   * Messages whose `legacyThreadId` has no `thread` record in the dump.
+   *
+   * `apply` buffers a message against the thread a `thread` record opened, so
+   * one with no thread is dropped when the buffer is next flushed, without a
+   * warning or a count. Reachable from a truncated extract, or from a mirror
+   * whose messages outlived their thread row.
+   */
+  orphanMessages: number;
   participants: number;
   messages: number;
   /** ACS control messages. `apply` skips these, so plan must not imply it won't. */
@@ -36,8 +45,13 @@ export async function migratePlan(
 ): Promise<PlanReport> {
   const acsIds = new Set<string>();
   const guids = new Set<string>();
+  // Counted after the stream, not during it, so a message is only called an
+  // orphan once every thread record in the dump has been seen.
+  const threadIds = new Set<string>();
+  const messagesPerThread = new Map<string, number>();
   const report: PlanReport = {
     threads: 0,
+    orphanMessages: 0,
     participants: 0,
     messages: 0,
     controlMessages: 0,
@@ -66,6 +80,7 @@ export async function migratePlan(
   for await (const rec of stream) {
     if (rec.kind === 'thread') {
       report.threads++;
+      threadIds.add(rec.legacyThreadId);
       noteAcsId(rec.createdByAcsId);
     } else if (rec.kind === 'participant') {
       report.participants++;
@@ -76,13 +91,31 @@ export async function migratePlan(
       noteAcsId(rec.acsId);
     } else if (rec.kind === 'message') {
       report.messages++;
-      if (!isReplayable(rec)) report.controlMessages++;
+      if (!isReplayable(rec)) {
+        report.controlMessages++;
+      } else {
+        // Only messages apply would otherwise have sent. Counting control
+        // messages here too would subtract them twice below, and apply skips
+        // them regardless, so an absent thread costs nothing for those.
+        messagesPerThread.set(
+          rec.legacyThreadId,
+          (messagesPerThread.get(rec.legacyThreadId) ?? 0) + 1,
+        );
+      }
       noteAcsId(rec.senderAcsId);
       const sender = rec.ourSenderUserId || rec.metadata?.originalSenderUserId;
       if (!sender || sender.startsWith('8:acs:')) report.messagesMissingOriginalSender++;
       const created = rec.metadata?.originalCreatedOn || rec.createdOn;
       if (!created) report.messagesMissingOriginalCreatedOn++;
     }
+  }
+
+  // apply is a streaming state machine: a message only reaches a thread that a
+  // `thread` record opened. One whose thread is absent is buffered, then
+  // discarded by the next flush, silently. plan exists to flag gaps before a
+  // replay, so it counts them rather than reporting them as replayable.
+  for (const [legacyThreadId, n] of messagesPerThread) {
+    if (!threadIds.has(legacyThreadId)) report.orphanMessages += n;
   }
 
   report.uniqueAcsIds = acsIds.size;
@@ -152,6 +185,22 @@ function attributionNote(report: PlanReport): string | null {
   ].join('\n');
 }
 
+/**
+ * Messages `apply` will silently discard, because no `thread` record opens the
+ * thread they name. Counted as a gap rather than as replayable, which is the
+ * one thing this command exists to do before a replay.
+ */
+function orphanNote(report: PlanReport): string | null {
+  if (report.orphanMessages === 0) return null;
+  return [
+    `WARNING: ${report.orphanMessages} message(s) name a thread with no thread record`,
+    '         in this dump. `apply` buffers a message against the thread a thread',
+    '         record opened, so these are dropped at the next flush without a',
+    '         warning. Usually a truncated extract, or a mirror whose messages',
+    '         outlived their thread row. Re-extract before replaying.',
+  ].join('\n');
+}
+
 export function formatPlan(report: PlanReport, targetResourceGuid?: string): string {
   // padEnd, then an unconditional space: a label longer than the column must
   // still separate from its value.
@@ -162,7 +211,11 @@ export function formatPlan(report: PlanReport, targetResourceGuid?: string): str
     row('  of those, with a derived id', report.participantsWithDerivedId),
     row('messages', report.messages),
     row('  of those, ACS control messages', report.controlMessages),
-    row('  replayable by apply', report.messages - report.controlMessages),
+    row('  of those, thread not in dump', report.orphanMessages),
+    row(
+      '  replayable by apply',
+      report.messages - report.controlMessages - report.orphanMessages,
+    ),
     row('unique ACS identities', report.uniqueAcsIds),
     row('messages carrying our user id', attributionRow(report)),
     row('messages missing original time', report.messagesMissingOriginalCreatedOn),
@@ -171,6 +224,8 @@ export function formatPlan(report: PlanReport, targetResourceGuid?: string): str
   if (targetResourceGuid) {
     lines.push(row(`stale ACS ids vs ${targetResourceGuid}`, report.staleAcsIds));
   }
+  const orphans = orphanNote(report);
+  if (orphans) lines.push('', orphans);
   const note = attributionNote(report);
   if (note) lines.push('', note);
   const derived = derivedIdNote(report);
