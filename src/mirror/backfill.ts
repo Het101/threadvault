@@ -4,6 +4,7 @@ import type { TwilioAuth } from '../twilio/client.ts';
 import { sinkPostgres } from './sink-postgres.ts';
 import { sinkJsonl } from './sink-jsonl.ts';
 import { sourceJsonlFile } from './source-jsonl.ts';
+import { remap } from './remap.ts';
 import type { PgClient } from '../db/pg.ts';
 import type { Rec } from './types.ts';
 
@@ -25,6 +26,15 @@ export type MirrorOpts = {
   threadIds?: string[];
   /** Threads walked at once. Messages inside a thread always stay serial. */
   concurrency?: number;
+  /**
+   * ACS id to our user id, from the host users table.
+   *
+   * Without it a source that carries no ids of ours, which is every ACS walk
+   * and every dump made from one, is written entirely under derived stand-ins.
+   * The caller checks coverage over the whole source before passing this, since
+   * a partially mapped write cannot be repaired by re-running.
+   */
+  identityMap?: Map<string, string>;
 };
 
 export type MirrorStats = {
@@ -56,6 +66,12 @@ export async function mirrorBackfill(opts: MirrorOpts): Promise<MirrorStats | vo
       threadIds: opts.threadIds,
       concurrency: opts.concurrency,
     });
+  }
+
+  // After the source is chosen and before any sink sees a record, so every
+  // source benefits and neither sink needs to know this happened.
+  if (opts.identityMap) {
+    stream = remap(stream, opts.identityMap);
   }
 
   if (opts.db && opts.jsonlPath) {

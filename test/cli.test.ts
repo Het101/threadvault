@@ -286,6 +286,28 @@ describe('a command that cannot run says why, and exits 2', () => {
     expect(r.out).not.toContain('missing-system-identity');
   });
 
+  // --map-from-db checks coverage over the whole source before writing, which
+  // needs to read it twice. A live walk cannot be replayed cheaply, and doing
+  // the check as it streams would discover the problem after the write.
+  it('will not map from the database against a live walk', async () => {
+    const r = await run('mirror', 'backfill', '--map-from-db');
+    expect(r.code).toBe(2);
+    expect(r.err).toMatch(/needs a file rather than a live walk/);
+    expect(r.err).toMatch(/migrate extract/);
+  });
+
+  it('will not map from a database it has no url for', async () => {
+    delete process.env.DATABASE_URL;
+    const dir = mkdtempSync(join(tmpdir(), 'tv-map-'));
+    const dump = join(dir, 'd.jsonl');
+    writeFileSync(dump, '');
+
+    const r = await run('mirror', 'backfill', '--from-jsonl', dump, '--map-from-db');
+
+    expect(r.code).toBe(2);
+    expect(r.err).toMatch(/DATABASE_URL is not set/);
+  });
+
   // A JSONL source that yielded nothing reported three zeros and exited 0.
   // With --commit that reads as a mirror populated successfully, when the path
   // was wrong or the extract never finished writing. Same shape as the empty

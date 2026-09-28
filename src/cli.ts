@@ -49,6 +49,7 @@ const lazy = {
   backfill: () => import('./mirror/backfill.ts'),
   twilioClient: () => import('./twilio/client.ts'),
   sourceJsonl: () => import('./mirror/source-jsonl.ts'),
+  remap: () => import('./mirror/remap.ts'),
   sourcePostgres: () => import('./mirror/source-postgres.ts'),
   rehearse: () => import('./migrate/rehearse.ts'),
   apply: () => import('./migrate/apply.ts'),
@@ -315,7 +316,13 @@ mirror
   .option('--reader-acs-id <id>', 'the ACS identity to perform the ACS read as')
   .option('--concurrency <n>', 'threads walked at once (messages stay serial)', '4')
   .option('--commit', 'must be passed to write to Postgres (otherwise dry-run)')
-  .action(async (opts: { fromJsonl?: string; fromTwilio?: boolean; toJsonl?: string; readerAcsId?: string; concurrency?: string; commit?: boolean }) => {
+  .option('--config <path>', 'path to threadvault.yml, for --map-from-db')
+  .option(
+    '--map-from-db',
+    'fill our user ids from your users table via threadvault.yml, and refuse if any ACS id is unaccounted for',
+  )
+  .option('--allow-unmapped', 'with --map-from-db, accept derived stand-ins for the ids it could not resolve')
+  .action(async (opts: { fromJsonl?: string; fromTwilio?: boolean; toJsonl?: string; readerAcsId?: string; concurrency?: string; commit?: boolean; config?: string; mapFromDb?: boolean; allowUnmapped?: boolean }) => {
     try {
       const cs = await acsConnectionString();
       const dbUrl = process.env.DATABASE_URL;
@@ -334,6 +341,71 @@ mirror
           process.exit(2);
         }
         twilio = auth;
+      }
+
+      // Resolve who these ACS ids belong to before anything is written.
+      //
+      // The check runs over the whole source first, and refuses, because a
+      // partially mapped write cannot be undone by re-running:
+      // threadvault_identities is keyed (our_user_id, resource_guid), so a row
+      // written under a derived stand-in and the same person's row under their
+      // real id are two rows, not one row corrected.
+      let identityMap: Map<string, string> | undefined;
+      if (opts.mapFromDb) {
+        if (!opts.fromJsonl) {
+          logError(
+            '--map-from-db reads the source twice, to check coverage before writing, so it ' +
+              'needs a file rather than a live walk. Run `migrate extract --out dump.jsonl` ' +
+              'first, then backfill --from-jsonl dump.jsonl --map-from-db.',
+          );
+          process.exit(2);
+        }
+        if (!dbUrl) {
+          logError('DATABASE_URL is not set, and --map-from-db reads your users table.');
+          process.exit(2);
+        }
+        const cfgForMap = (await lazy.config()).loadConfig(opts.config);
+        if (!cfgForMap.host) {
+          logError(
+            '--map-from-db needs a threadvault.yml describing your users table: usersTable, ' +
+              'usersIdColumn, usersAcsIdColumn. If the ACS id lives somewhere other than a ' +
+              'column on users, point usersTable at a view that joins it.',
+          );
+          process.exit(2);
+        }
+
+        const { connectReadOnly } = await lazy.pg();
+        const { loadHostUsers } = await lazy.checks();
+        const { buildIdentityMap, measureCoverage, coverageLines } = await lazy.remap();
+        const { sourceJsonlFile } = await lazy.sourceJsonl();
+
+        const readDb = await connectReadOnly(dbUrl);
+        let hostUsers;
+        try {
+          hostUsers = await loadHostUsers(readDb, cfgForMap.host);
+        } finally {
+          await readDb.end().catch(() => undefined);
+        }
+
+        const built = buildIdentityMap(hostUsers);
+        const coverage = await measureCoverage(sourceJsonlFile(opts.fromJsonl), built.map);
+        log(coverageLines(coverage, built.duplicates).join('\n'));
+
+        if (coverage.unresolved.length && !opts.allowUnmapped) {
+          logError(
+            `${coverage.unresolved.length} ACS id(s) in the dump have no row in your users ` +
+              'table, so nothing was written. Replaying them attributes those messages to ' +
+              'people who match no row and never will, and the ACS ids that could identify ' +
+              'them die with the resource. Fix the mapping and re-run, or pass ' +
+              '--allow-unmapped to accept derived stand-ins for exactly these.',
+          );
+          for (const acsId of coverage.unresolved.slice(0, 10)) logError(`  ${acsId}`);
+          if (coverage.unresolved.length > 10) {
+            logError(`  ... and ${coverage.unresolved.length - 10} more`);
+          }
+          process.exit(2);
+        }
+        identityMap = built.map;
       }
 
       let db: PgClient | undefined;
@@ -364,6 +436,7 @@ mirror
         fromJsonl: opts.fromJsonl,
         twilio,
         concurrency: Math.max(1, Number(opts.concurrency ?? 4)),
+        identityMap,
       });
 
       if (stats) {
