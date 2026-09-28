@@ -116,7 +116,16 @@ program
       let host = '(unknown)';
       if (walkAcs) {
         if (!cs) {
-          logError('ACS_CONNECTION_STRING is not set (pass --no-acs to audit the database only)');
+          logError(
+            // No literal access-key token in here: log.ts redacts everything
+            // after it, which mangled this very example into an unusable line.
+            'ACS_CONNECTION_STRING is not set.\n' +
+              '  Azure portal > your Communication Services resource > Keys > Connection string.\n' +
+              '  Copy the whole value, key included, and quote it:\n' +
+              "    export ACS_CONNECTION_STRING='endpoint=https://<name>.communication.azure.com/;...'\n" +
+              "  Unquoted, the shell ends the command at the ';' and the key is silently dropped.\n" +
+              '  No ACS access? threadvault doctor --no-acs, with DATABASE_URL and ACS_EXPECT_RESOURCE set.',
+          );
           process.exit(2);
         }
         const { probeResource } = await lazy.acsClient();
@@ -133,7 +142,12 @@ program
         }
         resourceGuid = probe.guid!;
       } else if (!resourceGuid) {
-        logError('ACS_EXPECT_RESOURCE is required with --no-acs (the GUID to compare stored identities against)');
+        logError(
+          'ACS_EXPECT_RESOURCE is required with --no-acs: the resource GUID stored identities are ' +
+            'compared against.\n' +
+            '  It is the GUID in an ACS id you already store: 8:acs:<GUID>_<user>.\n' +
+            '  With ACS access instead: threadvault probe.',
+        );
         process.exit(2);
       }
 
@@ -156,7 +170,7 @@ program
           await db.end().catch(() => undefined);
         }
       } else if (!wantJson) {
-        log('note: DATABASE_URL unset — doctor will only see what ACS lists, not host identities');
+        log('note: DATABASE_URL unset, so doctor sees only what ACS lists, not host identities');
       }
 
       let acsParticipants: DoctorInputs['acsParticipants'] = new Map();
@@ -189,11 +203,26 @@ program
           logError(
             'No usable ACS identity: every identity on record belongs to another resource, or ' +
               'none is recorded yet. Nothing on ACS was read, so this run is inconclusive rather ' +
-              'than clean. Point threadvault.yml at your own tables, or pass --no-acs to audit ' +
-              'the database alone.',
+              'than clean. Point threadvault.yml at your own tables, or pass --no-acs with ' +
+              'DATABASE_URL set to audit the database alone.',
           );
           process.exit(2);
         }
+      }
+
+      // The ACS path refuses to report on a scan that never ran. --no-acs was
+      // the escape hatch that guard offered, and it skipped the guard: with no
+      // database either, doctor read nothing at all and still printed four
+      // checks as ok, plus a finding about a users table it never opened. A run
+      // that read no source is inconclusive whichever source was skipped.
+      // Reaching here with !acsScanned means --no-acs, since the walk exits above.
+      if (!acsScanned && users.length === 0 && threads.length === 0) {
+        logError(
+          '--no-acs skipped the ACS walk and the database supplied no identities or threads, so ' +
+            'nothing was read. This run is inconclusive rather than clean. Set DATABASE_URL, check ' +
+            'that threadvault.yml points at your tables, or drop --no-acs.',
+        );
+        process.exit(2);
       }
 
       const { runChecks } = await lazy.checks();

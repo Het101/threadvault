@@ -270,6 +270,34 @@ describe('a command that cannot run says why, and exits 2', () => {
     expect(r.code).toBe(2);
     expect(r.err).toContain('inconclusive');
   });
+
+  // The guard above told the user to pass --no-acs, and --no-acs skipped the
+  // guard. With no database either, doctor read nothing and still printed four
+  // checks as ok and one finding about a users table it never opened. Found by
+  // running the published package the way a reader of the docs would.
+  it('doctor will not report on --no-acs with nothing to read', async () => {
+    delete process.env.DATABASE_URL;
+    process.env.ACS_EXPECT_RESOURCE = RESOURCE;
+    const r = await run('doctor', '--no-acs');
+    expect(r.code).toBe(2);
+    expect(r.err).toContain('inconclusive');
+    // The report must not have been printed at all.
+    expect(r.out).not.toContain('stale-identities');
+    expect(r.out).not.toContain('missing-system-identity');
+  });
+
+  it('tells you how to satisfy the variables it refuses without', async () => {
+    delete process.env.ACS_CONNECTION_STRING;
+    const r = await run('doctor');
+    expect(r.code).toBe(2);
+    // An error naming a variable without saying where the value comes from is
+    // where a first-time reader of the docs stops.
+    expect(r.err).toMatch(/Azure portal/);
+    expect(r.err).toMatch(/quote it/i);
+    // log.ts redacts everything after the access-key token, so help text that
+    // contains one redacts itself into an example nobody can follow.
+    expect(r.err).not.toContain('[redacted]');
+  });
 });
 
 /**
