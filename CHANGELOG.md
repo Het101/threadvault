@@ -6,7 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
-## [Unreleased]
+## [0.10.1] - 2026-09-28
+
+Patch, from running the published package the way somebody arriving from the
+docs would: nothing configured, clean directory, follow what the tool says.
 
 ### Fixed
 
@@ -76,6 +79,23 @@ author](https://github.com/Het101/threadvault/issues/93).
   6 participants, 5 messages — including an empty conversation and a
   participant reached over SMS who has a binding address and no identity.
 
+- **`migrate plan` counts participants carrying an id this tool derived**, and
+  says what that costs. `mirror backfill` stands a deterministic id in for
+  anyone the host tables did not map, so re-running stays a no-op. Replaying
+  one mints an identity against that synthetic id: the thread is whole and the
+  messages are attributed, and the person matches no row in your users table
+  and never will.
+
+  Found by replaying from a Postgres mirror for the first time. Plan reported
+  `messages carrying our user id: 5 of 5` — a clean bill — while one of seven
+  participants was unmapped. The metric counts messages; the derived id is on a
+  participant. Detection is exact rather than a guess, because the derived id
+  is a deterministic function of the provider id.
+
+  The note says how to fix it: point `threadvault.yml` at your users table and
+  re-run `mirror backfill`, which repairs rows rather than duplicating them.
+  Mapping is your data, so the tool says how rather than inventing one.
+
 ### Changed
 
 - **`migrate plan`'s attribution note no longer says "ACS"** when the dump did
@@ -99,27 +119,6 @@ author](https://github.com/Het101/threadvault/issues/93).
   since the beginning. Both now fail with the reason and exit `2`. A failure to
   read one thread is still tolerated; a failure to read any is not a finding
   about the estate.
-
-## [Unreleased]
-
-### Added
-
-- **`migrate plan` counts participants carrying an id this tool derived**, and
-  says what that costs. `mirror backfill` stands a deterministic id in for
-  anyone the host tables did not map, so re-running stays a no-op. Replaying
-  one mints an identity against that synthetic id: the thread is whole and the
-  messages are attributed, and the person matches no row in your users table
-  and never will.
-
-  Found by replaying from a Postgres mirror for the first time. Plan reported
-  `messages carrying our user id: 5 of 5` — a clean bill — while one of seven
-  participants was unmapped. The metric counts messages; the derived id is on a
-  participant. Detection is exact rather than a guess, because the derived id
-  is a deterministic function of the provider id.
-
-  The note says how to fix it: point `threadvault.yml` at your users table and
-  re-run `mirror backfill`, which repairs rows rather than duplicating them.
-  Mapping is your data, so the tool says how rather than inventing one.
 
 ## [0.9.2] - 2026-09-26
 
@@ -690,6 +689,7 @@ happens when you hold it wrong.
 Initial release: `probe`, `doctor`, `mirror backfill`, `migrate extract`,
 `migrate rehearse`, `migrate apply`.
 
+[0.10.1]: https://github.com/Het101/threadvault/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/Het101/threadvault/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/Het101/threadvault/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/Het101/threadvault/compare/v0.9.0...v0.9.1
