@@ -1,6 +1,16 @@
 import { config as loadDotenv } from 'dotenv';
 import { Command } from 'commander';
 import { pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
+
+// The version was a literal in the .version() call below and drifted from
+// package.json at the v0.10.1 release: CI caught the built binary printing
+// 0.10.0. Bumping the literal would have fixed that release and guaranteed the
+// next one. '../package.json' is correct from both places this file runs from:
+// dist/cli.js in the published package, and src/cli.ts under tsx.
+const { version: VERSION } = createRequire(import.meta.url)('../package.json') as {
+  version: string;
+};
 
 // `quiet` because dotenv 17 started announcing itself on every load. This is a
 // CLI whose output is read by people mid-incident and, with --json, by other
@@ -57,7 +67,7 @@ const program = new Command();
 program
   .name('threadvault')
   .description('Mirror Azure Communication Services chat into Postgres so the ACS resource is disposable.')
-  .version('0.10.0');
+  .version(VERSION);
 
 program
   .command('probe')
