@@ -286,6 +286,23 @@ describe('a command that cannot run says why, and exits 2', () => {
     expect(r.out).not.toContain('missing-system-identity');
   });
 
+  // README: "0 clean, 1 findings or a mismatch, 2 could not run. Safe to gate a
+  // deploy on." Commander exits 1 for its own usage errors, so `migrate verify`
+  // with a forgotten --state returned 1, which a cutover gate reads as "the
+  // estate does not match" rather than "the command never ran". Six of the
+  // eight commands refused with 2 and these two did not.
+  it('exits 2 for a usage error, not 1, which means findings', async () => {
+    const cases = [
+      ['migrate', 'extract'], // missing --out
+      ['migrate', 'verify'], // missing --state
+      ['notacommand'],
+    ];
+    for (const argv of cases) {
+      const r = await run(...argv);
+      expect(r.code, argv.join(' ')).toBe(2);
+    }
+  });
+
   it('tells you how to satisfy the variables it refuses without', async () => {
     delete process.env.ACS_CONNECTION_STRING;
     const r = await run('doctor');

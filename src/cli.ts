@@ -64,6 +64,20 @@ const acsExpectResource = async () => (await lazy.config()).acsExpectResource();
 
 const program = new Command();
 
+// README sells the exit codes as safe to gate a deploy on: 0 clean, 1 findings
+// or a mismatch, 2 could not run. Commander exits 1 for its own usage errors,
+// so `migrate verify` with a forgotten --state returned 1, which a cutover gate
+// reads as "the estate does not match" rather than "the command never ran".
+// A usage error is the could-not-run case. Set before any .command() call, so
+// subcommands inherit it.
+// Commander already separates the two: requested help and --version carry
+// exitCode 0, while a usage error carries 1 (including `commander.help`, which
+// is help printed *because* no command was given). So trust its exitCode rather
+// than matching on err.code, which reads backwards.
+program.exitOverride((err) => {
+  process.exit(err.exitCode === 1 ? 2 : err.exitCode);
+});
+
 program
   .name('threadvault')
   .description('Mirror Azure Communication Services chat into Postgres so the ACS resource is disposable.')
