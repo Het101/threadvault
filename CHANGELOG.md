@@ -6,6 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
+## [Unreleased]
+
+### Fixed
+
+- **`doctor --no-acs` reported a clean estate having read nothing.** The ACS
+  path already refused to call a scan it never ran clean. The remedy that guard
+  offered was `--no-acs`, and `--no-acs` skipped the guard: with no
+  `DATABASE_URL` either, `doctor` walked no threads, loaded no rows, and still
+  printed four checks as `ok` plus a finding about a `users` table it had never
+  opened. It now refuses, as the ACS path does, whichever source was skipped.
+
+  Found by running the published package the way somebody arriving from the
+  docs would, with nothing configured. It is two commands from a cold start,
+  and the tool's own error message is what steers you down it.
+
+- **The first-run errors named a variable without saying where the value comes
+  from.** `ACS_CONNECTION_STRING is not set` is accurate and useless to someone
+  who has just read "takes seconds and gives you a number". Both cold-start
+  errors now give the portal path, a quoted example, and the alternative.
+
+  The example cannot contain a literal access-key token: `src/log.ts` redacts
+  everything after one, which turned the first version of this help text into
+  an unusable line. The redaction is correct and unchanged.
+
 ## [0.10.0] - 2026-09-26
 
 Two features from pointing the tool at things: replaying from a Postgres
