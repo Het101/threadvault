@@ -286,6 +286,22 @@ describe('a command that cannot run says why, and exits 2', () => {
     expect(r.out).not.toContain('missing-system-identity');
   });
 
+  // A JSONL source that yielded nothing reported three zeros and exited 0.
+  // With --commit that reads as a mirror populated successfully, when the path
+  // was wrong or the extract never finished writing. Same shape as the empty
+  // dump `migrate plan` accepted.
+  it('will not call a backfill that read no records complete', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tv-empty-'));
+    const empty = join(dir, 'empty.jsonl');
+    writeFileSync(empty, '');
+
+    const r = await run('mirror', 'backfill', '--from-jsonl', empty);
+
+    expect(r.code).toBe(2);
+    expect(r.err).toMatch(/No records read/);
+    expect(r.err).toMatch(/not a completed backfill/);
+  });
+
   // README: "0 clean, 1 findings or a mismatch, 2 could not run. Safe to gate a
   // deploy on." Commander exits 1 for its own usage errors, so `migrate verify`
   // with a forgotten --state returned 1, which a cutover gate reads as "the

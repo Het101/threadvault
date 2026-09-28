@@ -376,6 +376,21 @@ mirror
         log('Backfill complete.');
       }
 
+      // A JSONL source that yielded nothing reported three zeros and exited 0,
+      // which this tool's exit codes define as clean. With --commit that reads
+      // as a mirror populated successfully, when the path was wrong or the
+      // extract never finished writing. Only for --from-jsonl: an ACS or
+      // Twilio walk that genuinely finds an empty estate is a real answer, and
+      // one that *fails* to list already exits 2 elsewhere.
+      if (opts.fromJsonl && stats && stats.threads === 0 && stats.messages === 0) {
+        if (db) await db.end().catch(() => undefined);
+        logError(
+          `No records read from ${opts.fromJsonl}. Nothing was mirrored, so this is not a ` +
+            'completed backfill. Check the path, and that the extract finished writing.',
+        );
+        process.exit(2);
+      }
+
       if (db) {
         await db.end().catch(() => undefined);
       }
