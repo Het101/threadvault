@@ -58,6 +58,8 @@ Mirror once and ACS becomes a cache. Every message lands in **your** database un
 >
 > **The full write-up, including what we got wrong and what to do if it is happening to you right now: [post-mortem](docs/postmortem-acs-chat-migration.md).**
 
+**Rather not do the migration yourself?** It is available as a fixed-price job, from audit to a signed-off `verify` report. [Migration help →](docs/migration-help.md)
+
 ---
 
 ## Install
