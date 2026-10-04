@@ -99,6 +99,9 @@ function adviceLines(advice: Advice[]): string[] {
   return out;
 }
 
+/** Where a reader with findings can ask for help. Text report only; never in --json. */
+export const HELP_URL = 'https://github.com/Het101/threadvault/blob/main/docs/migration-help.md';
+
 export function formatReport(report: DoctorReport): string {
   const lines: string[] = [];
   lines.push(`threadvault doctor`);
@@ -125,6 +128,7 @@ export function formatReport(report: DoctorReport): string {
     lines.push(`  … ${report.findings.length - shown.length} more (pass --json for the full list)`);
   }
   for (const line of adviceLines(report.advice)) lines.push(line);
+  lines.push('', '  Need a hand fixing these or migrating off ACS Chat?', `  ${HELP_URL}`);
   return lines.join('\n');
 }
 

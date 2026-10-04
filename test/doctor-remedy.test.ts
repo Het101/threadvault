@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { runChecks, type Finding, type FindingKind } from '../src/doctor/checks.ts';
 import { REMEDIES, adviceFor } from '../src/doctor/remedy.ts';
-import { buildReport, formatReport } from '../src/doctor/report.ts';
+import { buildReport, formatReport, HELP_URL } from '../src/doctor/report.ts';
 
 const RESOURCE = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const OTHER = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
@@ -147,6 +147,7 @@ describe('advice is grouped, not repeated', () => {
     const report = buildReport(RESOURCE, 'h', [], scope);
     expect(report.advice).toEqual([]);
     expect(formatReport(report)).not.toContain('What to do');
+    expect(formatReport(report)).not.toContain(HELP_URL);
   });
 });
 
@@ -168,6 +169,11 @@ describe('the rendered report', () => {
       ['system-only-thread', 2],
       ['acs-thread-not-in-db', 1],
     ]);
+  });
+
+  it('points a reader with findings at migration help, last', () => {
+    const out = formatReport(report);
+    expect(out.trimEnd().endsWith(HELP_URL)).toBe(true);
   });
 
   it('states means, action and verification for each', () => {

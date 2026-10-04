@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [Semantic Versioning](https://semver.org/). Until 1.0, breaking
 changes may land in a minor release; they are always called out below.
 
+## [Unreleased]
+
+### Added
+
+- `doctor`'s text report ends with a link to [migration help](docs/migration-help.md)
+  when it has findings. Clean runs and `--json` output are unchanged.
+
 ## [0.11.0] - 2026-09-28
 
 Minor: one feature, five fixes. The feature exists because a real migration
